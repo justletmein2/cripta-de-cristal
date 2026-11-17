@@ -18,7 +18,43 @@ const TIPOS_POR_ANDAR = {
   3: [['esqueleto', 3], ['morcego', 3], ['conjurador', 3], ['golem', 3]],
 };
 
+// gera e confere se dá pra chegar no fim; se não der, tenta outra variação (sempre igual pra todos)
 export function gerarNivel(semente, andar) {
+  for (let t = 0; t < 12; t++) {
+    const nv = gerarNivelBruto(semente + t * 7717, andar);
+    nv.semente = semente;
+    if (nv.chefe || alcancavel(nv)) return nv;
+  }
+  return gerarNivelBruto(semente, andar);
+}
+
+// confere se existe caminho do começo até o portal (pulo de ~3 blocos de altura e ~5 de distância)
+export function alcancavel(nv) {
+  const vazio = (x, y) => bloco(nv, x, y) === 0;
+  const pe = (x, y) => x > 0 && x < nv.w - 1 && y > 1 && vazio(x, y) && vazio(x, y - 1) && (bloco(nv, x, y + 1) === 1 || bloco(nv, x, y + 1) === 2);
+  const ini = [Math.floor(nv.inicio.x / T), Math.floor(nv.inicio.y / T) - 1];
+  const fimX = nv.portal ? Math.floor(nv.portal.x / T) : nv.w - 3;
+  const vis = new Set([ini + '']), fila = [ini];
+  while (fila.length) {
+    const [x, y] = fila.pop();
+    if (x >= fimX) return true;
+    for (let dx = -4; dx <= 4; dx++) for (let dy = -3; dy <= 10; dy++) {
+      const nx = x + dx, ny = y + dy;
+      if (!pe(nx, ny) || vis.has(nx + ',' + ny)) continue;
+      let ok = true;
+      const p = dx > 0 ? 1 : -1;
+      for (let xi = x; dx && xi !== nx + p && ok; xi += p) {
+        const y0 = Math.max(1, Math.min(y, ny) - 1 - (Math.abs(dx) >= 3 || dy < 0 ? 1 : 0));
+        for (let yy = y0; yy <= Math.min(y, ny); yy++) if (bloco(nv, xi, yy) === 1 || bloco(nv, xi, yy) === 3) ok = false;
+      }
+      if (!dx) for (let yy = ny - 1; yy <= y; yy++) if (bloco(nv, x, yy) === 1) ok = false;
+      if (ok) { vis.add(nx + ',' + ny); fila.push([nx, ny]); }
+    }
+  }
+  return false;
+}
+
+function gerarNivelBruto(semente, andar) {
   const r = rng(semente * 977 + andar * 131);
   const H = 26;
   const chefe = ehChefe(andar);
@@ -97,11 +133,24 @@ export function gerarNivel(semente, andar) {
     if (g >= H - 2) set(x, g - 1, 3);
   }
   // teto: segue o chão de longe (caverna), sem apertar as plataformas
+  // piso de cada coluna = chão (se não for buraco) ou a plataforma mais alta; buraco sem plataforma herda o vizinho
+  const piso = new Int16Array(W);
   for (let x = 0; x < W; x++) {
-    let alto = chao[x];
-    for (let y = 0; y < H; y++) if (tiles[y * W + x] === 2) { alto = Math.min(alto, y); break; }
-    for (let k = -3; k <= 3; k++) { const xx = x + k; if (xx >= 0 && xx < W) alto = Math.min(alto, chao[xx] >= H - 2 ? alto : chao[xx]); }
-    const teto = Math.max(0, alto - 9 - (Math.sin(x * 0.45) > 0.6 ? 1 : 0));
+    let p = chao[x] >= H - 2 ? 99 : chao[x];
+    for (let y = 0; y < H; y++) if (tiles[y * W + x] === 2) { p = Math.min(p, y); break; }
+    piso[x] = p;
+  }
+  for (let x = 0; x < W; x++) if (piso[x] === 99) {
+    let a = x, b = x;
+    while (a > 0 && piso[a] === 99) a--;
+    while (b < W - 1 && piso[b] === 99) b++;
+    piso[x] = Math.min(piso[a] === 99 ? H - 7 : piso[a], piso[b] === 99 ? H - 7 : piso[b]);
+  }
+  // teto: fica sempre bem acima do piso mais alto por perto (nunca vira parede que fecha a passagem)
+  for (let x = 0; x < W; x++) {
+    let alto = 99;
+    for (let k = -5; k <= 5; k++) { const xx = x + k; if (xx >= 0 && xx < W) alto = Math.min(alto, piso[xx]); }
+    const teto = Math.max(0, alto - 8 - (Math.sin(x * 0.45) > 0.6 ? 1 : 0));
     for (let y = 0; y < teto; y++) set(x, y, 1);
   }
   for (let y = 0; y < H; y++) { set(0, y, 1); set(W - 1, y, 1); }

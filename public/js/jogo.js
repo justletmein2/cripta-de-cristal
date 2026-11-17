@@ -9,7 +9,7 @@ import { moverCorpo, solido } from './fisica.js';
 import { ctrl, consumir, temPedido, ligarControles } from './controles.js';
 import { som, iniciarSom, musica, alternarSom } from './som.js';
 import * as rede from './rede.js';
-import { carregarSprites } from './sprites.js';
+import { carregarSprites, pontaArma } from './sprites.js';
 carregarSprites(['cavaleiro_m', 'cavaleiro_f', 'mago_f', 'mago_m']);
 
 const $ = s => document.querySelector(s);
@@ -414,6 +414,7 @@ function atualizarEu(dt) {
       h.combo = (at || h.comboT > 0) ? (h.combo + 1) % ats.length : 0;
       h.atk = ats[h.combo]; h.atkT = 0; h.acertados.clear(); h.tiroFeito = false; h.corteFeito = false; h.ak++;
       if (mx) h.d = mx;
+      if (h.atk.tiro) { const alvo = inimigoMaisPerto(h, 900); if (alvo) h.d = sinal(alvo.x - h.x) || h.d; }
       som.golpe(h.atk.forte);
     }
   }
@@ -427,7 +428,13 @@ function atualizarEu(dt) {
     }
     if (at.tiro && h.atkT >= ini && !h.tiroFeito) {
       h.tiroFeito = true; som.magia();
-      P.tiros.push({ x: h.x + h.d * 62, y: h.y - 62, vx: h.d * at.tiro.vel, vy: 0, raio: at.tiro.raio, dano: at.dano, kb: at.kb, perfura: at.tiro.perfura, forte: !!at.forte, acertados: new Set(), vida: 1.2 });
+      const pt = pontaArma(h.classe, h.sexo) || [62, -62];
+      const sx = h.x + h.d * pt[0], sy = h.y + pt[1];
+      // mira automática: no inimigo mais perto à frente; sem ninguém, vai reto
+      const alvo = inimigoMaisPerto(h, 900, true);
+      let ang = h.d > 0 ? 0 : Math.PI;
+      if (alvo) ang = Math.atan2((alvo.y - alvo.h / 2) - sy, alvo.x - sx);
+      P.tiros.push({ x: sx, y: sy, vx: Math.cos(ang) * at.tiro.vel, vy: Math.sin(ang) * at.tiro.vel, raio: at.tiro.raio, dano: at.dano, kb: at.kb, perfura: at.tiro.perfura, forte: !!at.forte, acertados: new Set(), vida: 1.2 });
     }
     if (!at.tiro && h.atkT >= ini && h.atkT <= fim) {
       const cx = caixaAtaque(h, at);
@@ -537,6 +544,17 @@ function reviver(frac) {
 function efeitoCorte(x, y, d, at, cor, combo) {
   P.fx.push({ tipo: at.tipo || 'corte', x, y, d, t: 0, dur: at.forte ? 0.28 : 0.2, cor, alc: at.alc || 70, alt: at.alt || 60, forte: !!at.forte, combo });
 }
+// inimigo vivo mais perto (opcional: só os que estão na frente)
+function inimigoMaisPerto(h, raio, soFrente) {
+  let melhor = null, md = raio;
+  for (const en of P.ini.values()) {
+    if (!(en.hp > 0)) continue;
+    if (soFrente && sinal(en.x - h.x) !== h.d && Math.abs(en.x - h.x) > 20) continue;
+    const d = Math.hypot(en.x - h.x, (en.y - en.h / 2) - (h.y - 50));
+    if (d < md) { md = d; melhor = en; }
+  }
+  return melhor;
+}
 function efeitoBlink(x, y, cor, classe) {
   if (classe === 'mago') {
     // portal arcano: círculo de runas + faíscas de cristal azul e lilás
@@ -570,7 +588,7 @@ function atualizarEfeitos(dt) {
   // tiros do mago
   const h = P.eu;
   for (const s of P.tiros) {
-    s.x += s.vx * dt; s.vida -= dt;
+    s.x += s.vx * dt; s.y += (s.vy || 0) * dt; s.vida -= dt;
     if (Math.random() < 0.7) P.parts.push({ x: s.x, y: s.y + (Math.random() - 0.5) * 8, vx: -s.vx * 0.05, vy: 0, vida: 0.25, max: 0.25, cor: '#c79bff', tam: s.raio * 0.4, grav: 0 });
     if (solido(nv, s.x, s.y)) { s.vida = 0; faiscas(s.x, s.y, '#c79bff', 6); continue; }
     for (const en of P.ini.values()) {
@@ -659,7 +677,7 @@ function meuEstado() {
     x: Math.round(h.x), y: Math.round(h.y), vx: Math.round(h.vx), vy: Math.round(h.vy), d: h.d, a: h.anim, f: Math.round(h.fase * 100) / 100,
     cb: h.combo, ak: h.ak, c: h.classe, s: h.sexo, n: G.nome || 'Herói', hp: Math.round(h.hp), mhp: h.mhp, cai: h.caido, por: h.naPorta,
     and: P.andar, fu: h.furiaT > 0, ch: h.noChao ? 1 : 0, rv: Math.round(h.reviveT * 10) / 10,
-    ps: P.tiros.length ? P.tiros.map(s => [Math.round(s.x), Math.round(s.y), Math.round(s.vx), s.raio]) : 0,
+    ps: P.tiros.length ? P.tiros.map(s => [Math.round(s.x), Math.round(s.y), Math.round(s.vx), s.raio, Math.round(s.vy || 0)]) : 0,
     fx: h.fx || 0, t: rede.agora(),
   };
 }
@@ -790,10 +808,10 @@ function desenhar() {
     c.fillStyle = st.cai ? '#888' : '#7dffb0'; c.fillRect(o.x - 24, o.y - 100, 48 * clamp(st.hp / st.mhp, 0, 1), 5);
     c.fillStyle = '#fff'; c.fillText(st.n || '', o.x, o.y - 106);
     if (st.cai) { c.fillStyle = '#ffe28a'; c.fillText(st.rv > 0 ? 'levantando…' : '⬇ ajude!', o.x, o.y - 120); }
-    if (st.ps) for (const [x, y, vx, r] of st.ps) {
-      const id = (Date.now() - (st.t || 0)) / 1000;
-      const ex = x + vx * clamp(id, 0, 0.12);
-      c.save(); c.globalCompositeOperation = 'lighter'; c.drawImage(brilho('rgba(199,155,255,.9)', 32), ex - r * 2.2, y - r * 2.2, r * 4.4, r * 4.4); c.restore();
+    if (st.ps) for (const [x, y, vx, r, vy] of st.ps) {
+      const id = clamp((Date.now() - (st.t || 0)) / 1000, 0, 0.12);
+      const ex = x + vx * id, ey = y + (vy || 0) * id;
+      c.save(); c.globalCompositeOperation = 'lighter'; c.drawImage(brilho('rgba(199,155,255,.9)', 32), ex - r * 2.2, ey - r * 2.2, r * 4.4, r * 4.4); c.restore();
     }
   }
   // eu
@@ -811,7 +829,7 @@ function desenhar() {
     c.save(); c.globalCompositeOperation = 'lighter';
     c.drawImage(brilho('rgba(199,155,255,.95)', 32), s.x - s.raio * 2.4, s.y - s.raio * 2.4, s.raio * 4.8, s.raio * 4.8);
     c.restore();
-    c.save(); c.translate(s.x, s.y); c.rotate(s.vx > 0 ? Math.PI / 2 : -Math.PI / 2);
+    c.save(); c.translate(s.x, s.y); c.rotate(Math.atan2(s.vy || 0, s.vx) + Math.PI / 2);
     cristal(c, 0, s.raio, s.raio * 2.6, s.raio * 1.1, ['#ffffff', '#c79bff', '#7c4dff'], 0); c.restore();
   }
   // meteoros

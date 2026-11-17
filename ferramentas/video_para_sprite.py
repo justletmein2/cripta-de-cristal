@@ -15,9 +15,9 @@ FUNDO = 5
 # animação: (pasta, quadros, espelhar?, ancora)  ancora: 'tronco' = alinha cada quadro pelo tronco; 'fixa' = alinha pelo 1º quadro
 TRECHOS = {}
 TRECHOS['mago_f'] = {
-    'parado': (B, list(range(1, 31, 2)), False, 'fixa'),       # toca indo e voltando
+    'parado': (B, list(range(1, 31, 2)), True, 'fixa'),        # toca indo e voltando (no vídeo ela olha pra esquerda)
     'correr': (A, list(range(30, 46)), False, 'tronco'),       # ciclo de 16 quadros (30 = 46)
-    'pular':  (B, list(range(52, 97, 3)), False, 'base'),
+    'pular':  (B, list(range(52, 97, 3)), True, 'base'),
     'atk1':   (A, list(range(64, 96, 2)), True, 'fixa'),
     'morrer': (A, list(range(150, 191, 3)), True, 'fixa'),
 }

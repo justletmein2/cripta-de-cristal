@@ -8,9 +8,9 @@ export const CLASSES = {
     desc: 'Espada pesada e muita vida. Habilidade: Investida (avança derrubando tudo, sem levar dano).',
     hab: 'Investida', habCd: 5,
     ataques: [
-      { dur: 0.36, ini: 0.11, fim: 0.24, dano: 20, alc: 78, alt: 64, kb: 240, tipo: 'corte' },
-      { dur: 0.36, ini: 0.11, fim: 0.24, dano: 22, alc: 78, alt: 64, kb: 240, tipo: 'corte' },
-      { dur: 0.52, ini: 0.18, fim: 0.32, dano: 38, alc: 92, alt: 80, kb: 460, tipo: 'corte', forte: true },
+      { dur: 0.36, ini: 0.11, fim: 0.24, dano: 20, alc: 104, alt: 92, kb: 240, tipo: 'corte' },
+      { dur: 0.36, ini: 0.11, fim: 0.24, dano: 22, alc: 104, alt: 92, kb: 240, tipo: 'corte' },
+      { dur: 0.52, ini: 0.18, fim: 0.32, dano: 38, alc: 124, alt: 112, kb: 460, tipo: 'corte', forte: true },
     ],
   },
   mago: {
