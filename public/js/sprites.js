@@ -10,6 +10,7 @@ const DEFS = {
   // combo: cada golpe toca só um trecho da folha [início, impacto, fim], pra emendar sem voltar à pose parada
   cavaleiro_m: { pulo: [6, 7, 8, 9, 10, 11], golpe: { atk1: 7, atk2: 6 },
     combo: [['atk1', 3, 7, 9], ['atk2', 3, 6, 9], ['atk1', 4, 7, 15]] },
+  mago_f: { pulo: [1, 3, 5, 7, 9, 11, 13], golpe: { atk1: 5 }, combo: [['atk1', 1, 5, 9], ['atk1', 2, 5, 9], ['atk1', 1, 6, 15]], semFerido: true, vaivem: true },
   cavaleiro_f: { pulo: [3, 4, 5, 6, 7, 8, 9], golpe: { atk1: 10 },
     combo: [['atk1', 6, 10, 11], ['atk1', 11, 8, 7], ['atk1', 7, 10, 16]] },   // desce, sobe (golpe de volta), desce forte
 };
@@ -37,7 +38,7 @@ export function temSprite(classe, sexo) { const s = cache[nomeDe(classe, sexo)];
 function quadro(nome, src, t) {
   const d = DEFS[nome], a = src.anim;
   const um = (anim, i) => [anim, i];
-  if (a === 'correr' || a === 'rolar') return um('correr', Math.floor((src.passo || t * 10) / (Math.PI * 2) * 13));
+  if (a === 'correr' || a === 'rolar') return um('correr', (src.passo || t * 10) / (Math.PI * 2) * nQuadros(nome, 'correr'));
   if (a === 'pular' || a === 'cair') {
     const k = clamp(((src.vy || 0) + 830) / 1430, 0, 0.999);
     return um('pular', d.pulo[Math.floor(k * d.pulo.length)]);
@@ -48,10 +49,12 @@ function quadro(nome, src, t) {
     return um(anim, f < fr ? ini + (f / fr) * (imp - ini) : imp + (f - fr) / (1 - fr) * (fim - imp));
   }
   if (a === 'hab') return um('atk1', d.golpe.atk1);
-  if (a === 'ferido') return um('ferido', (src.fase || 0) * 99);
+  if (a === 'ferido') return d.semFerido ? um('parado', 0) : um('ferido', (src.fase || 0) * 99);
   if (a === 'caido') return um('morrer', 999);
+  if (d.vaivem) { const n = nQuadros(nome, 'parado'), k = Math.floor(t * 9) % (2 * n - 2); return um('parado', k < n ? k : 2 * n - 2 - k); }
   return um('parado', Math.floor(t * 12));
 }
+const nQuadros = (nome, anim) => cache[nome].meta.anims[anim].n;
 
 // desenha com os pés em (0,0), virado para a direita
 export function desenharSprite(c, classe, sexo, src, t, alpha = 1) {
@@ -61,10 +64,12 @@ export function desenharSprite(c, classe, sexo, src, t, alpha = 1) {
   i = Math.floor(i);
   i = (anim === 'parado' || anim === 'correr') ? ((i % m.n) + m.n) % m.n : clamp(i, 0, m.n - 1);
   const sx = (i % m.por) * m.w, sy = m.y + Math.floor(i / m.por) * m.h;
+  const k = K * (s.meta.k || 1);
   c.save();
   c.globalAlpha *= alpha;
+  if (src.anim === 'ferido' && DEFS[nome].semFerido) c.rotate(-0.18);
   // luz suave atrás, pra arte não sumir no fundo escuro
   if (luz) { c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha *= 0.35; c.drawImage(luz, -60, -130, 120, 140); c.restore(); }
-  c.drawImage(s.img, sx, sy, m.w, m.h, m.ox * K, m.oy * K, m.w * K, m.h * K);
+  c.drawImage(s.img, sx, sy, m.w, m.h, m.ox * k, m.oy * k, m.w * k, m.h * k);
   c.restore();
 }

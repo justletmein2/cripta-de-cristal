@@ -33,4 +33,6 @@ no seu celular (salas com código de 4 letras).
 - Cavaleiro e Cavaleira usam os pacotes grátis "Anime Hero" e "Anime Swordswoman" de
   [reinvogames](https://reinvogames.itch.io) (licença royalty-free: pode usar no jogo, não pode redistribuir os arquivos).
   Os pacotes originais NÃO ficam aqui; `ferramentas/montar_sprites.py` gera as folhas de `public/sprites/` a partir deles.
+- A Maga foi feita a partir da Cavaleira (editada por IA) e animada por vídeo de IA (Veo, fundo preto).
+  `ferramentas/video_para_sprite.py` tira os quadros, apaga o fundo, alinha e monta `public/sprites/mago_f`.
 - Os outros heróis ainda são desenhados por código (`herois.js`).

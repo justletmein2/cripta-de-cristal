@@ -9,7 +9,7 @@ import { ctrl, consumir, temPedido, ligarControles } from './controles.js';
 import { som, iniciarSom, musica, alternarSom } from './som.js';
 import * as rede from './rede.js';
 import { carregarSprites } from './sprites.js';
-carregarSprites(['cavaleiro_m', 'cavaleiro_f']);
+carregarSprites(['cavaleiro_m', 'cavaleiro_f', 'mago_f']);
 
 const $ = s => document.querySelector(s);
 const cv = $('#tela'), ctx = cv.getContext('2d');
@@ -426,7 +426,7 @@ function atualizarEu(dt) {
     }
     if (at.tiro && h.atkT >= ini && !h.tiroFeito) {
       h.tiroFeito = true; som.magia();
-      P.tiros.push({ x: h.x + h.d * 30, y: h.y - 44, vx: h.d * at.tiro.vel, vy: 0, raio: at.tiro.raio, dano: at.dano, kb: at.kb, perfura: at.tiro.perfura, forte: !!at.forte, acertados: new Set(), vida: 1.2 });
+      P.tiros.push({ x: h.x + h.d * 62, y: h.y - 62, vx: h.d * at.tiro.vel, vy: 0, raio: at.tiro.raio, dano: at.dano, kb: at.kb, perfura: at.tiro.perfura, forte: !!at.forte, acertados: new Set(), vida: 1.2 });
     }
     if (!at.tiro && h.atkT >= ini && h.atkT <= fim) {
       const cx = caixaAtaque(h, at);
