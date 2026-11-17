@@ -10,6 +10,7 @@ const DEFS = {
   // combo: cada golpe toca só um trecho da folha [início, impacto, fim], pra emendar sem voltar à pose parada
   cavaleiro_m: { pulo: [6, 7, 8, 9, 10, 11], golpe: { atk1: 7, atk2: 6 },
     combo: [['atk1', 3, 7, 9], ['atk2', 3, 6, 9], ['atk1', 4, 7, 15]] },
+  mago_m: { pulo: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], golpe: { atk1: 3 }, combo: [['atk1', 0, 3, 8], ['atk1', 1, 3, 8], ['atk1', 0, 4, 16]], semFerido: true, vaivem: true },
   mago_f: { pulo: [1, 3, 5, 7, 9, 11, 13], golpe: { atk1: 5 }, combo: [['atk1', 1, 5, 9], ['atk1', 2, 5, 9], ['atk1', 1, 6, 15]], semFerido: true, vaivem: true },
   cavaleiro_f: { pulo: [3, 4, 5, 6, 7, 8, 9], golpe: { atk1: 10 }, ritmo: 0.62,
     combo: [['atk1', 6, 10, 11], ['atk1', 11, 8, 7], ['atk1', 7, 10, 16]] },   // desce, sobe (golpe de volta), desce forte

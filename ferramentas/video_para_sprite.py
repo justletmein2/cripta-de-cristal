@@ -1,28 +1,46 @@
 # Transforma os vídeos da Maga (gerados por IA, fundo preto) numa folha de sprite do jogo.
-# Uso: python3 video_para_sprite.py <pasta_quadros_A> <pasta_quadros_B> <saida_sem_extensao>
+# Uso: python3 video_para_sprite.py <heroi> <pasta_video_1> <pasta_video_2> <saida_sem_extensao>
+#   heroi: mago_f ou mago_m (cada um tem sua lista de trechos abaixo)
 # (os quadros saem do vídeo com: ffmpeg -i video.mp4 pasta/%03d.png)
 import sys, json, os
 import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-A, B, SAIDA = sys.argv[1], sys.argv[2], sys.argv[3]
+HEROI, A, B, SAIDA = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 ESC = 0.38          # 720p do vídeo -> folha
 K = 1 / 1.4         # a folha tem 1.4x a resolução da dos cavaleiros
 FUNDO = 5
 
 # animação: (pasta, quadros, espelhar?, ancora)  ancora: 'tronco' = alinha cada quadro pelo tronco; 'fixa' = alinha pelo 1º quadro
-ANIMS = {
+TRECHOS = {}
+TRECHOS['mago_f'] = {
     'parado': (B, list(range(1, 31, 2)), False, 'fixa'),       # toca indo e voltando
     'correr': (A, list(range(30, 46)), False, 'tronco'),       # ciclo de 16 quadros (30 = 46)
     'pular':  (B, list(range(52, 97, 3)), False, 'base'),
     'atk1':   (A, list(range(64, 96, 2)), True, 'fixa'),
     'morrer': (A, list(range(150, 191, 3)), True, 'fixa'),
 }
+# Mago: video 1 = Flow "action sequence" (parado, corrida, pulo), video 2 = Flow "criar animação" (magia, golpe, queda)
+TRECHOS['mago_m'] = {
+    'parado': (A, list(range(7, 32, 2)), False, 'fixa'),       # começo tem fumacinha, pula
+    'correr': (A, list(range(45, 75, 2)), False, 'tronco'),      # ciclo de 30 quadros (45 = 75)
+    'pular':  (A, list(range(106, 126, 2)), True, 'base'),        # no vídeo ele pula virado pra esquerda
+    'atk1':   (B, list(range(67, 113, 3)), False, 'fixa'),
+    'morrer': (B, list(range(140, 172, 2)), False, 'fixa'),
+}
+ANIMS = TRECHOS[HEROI]
+LIMPAR_VERMELHO = HEROI == 'mago_m'   # o vídeo 1 do Mago saiu com manchas vermelhas no rosto
 
 def recortar(pasta, i, esp):
     rgb = np.array(Image.open(os.path.join(pasta, f'{i:03d}.png')).convert('RGB')).astype(np.float32)
     if esp: rgb = rgb[:, ::-1]
+    if LIMPAR_VERMELHO:
+        r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+        mancha = (r > 120) & (g < r * 0.5) & (b < r * 0.5) & (r - g > 70)
+        mancha = ndimage.binary_dilation(mancha, iterations=2)
+        import cv2
+        rgb = cv2.inpaint(rgb.astype(np.uint8), mancha.astype(np.uint8), 6, cv2.INPAINT_TELEA).astype(np.float32)
     v = rgb.max(2)
     suave = np.clip((v - 14) / 26, 0, 1)
     solido = v > 24

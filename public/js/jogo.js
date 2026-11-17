@@ -10,7 +10,7 @@ import { ctrl, consumir, temPedido, ligarControles } from './controles.js';
 import { som, iniciarSom, musica, alternarSom } from './som.js';
 import * as rede from './rede.js';
 import { carregarSprites } from './sprites.js';
-carregarSprites(['cavaleiro_m', 'cavaleiro_f', 'mago_f']);
+carregarSprites(['cavaleiro_m', 'cavaleiro_f', 'mago_f', 'mago_m']);
 
 const $ = s => document.querySelector(s);
 const cv = $('#tela'), ctx = cv.getContext('2d');
