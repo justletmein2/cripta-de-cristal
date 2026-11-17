@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0820">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Cripta de Cristal</title>
+<meta name="description" content="Aventura de ação em masmorras de cristal, sozinho ou com amigos pelo celular.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 1 L26 12 L16 31 L6 12Z' fill='%23b48cff' stroke='%23fff' stroke-width='1.5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="tela"></canvas>
+
+<!-- ===== MENU ===== -->
+<section id="telaInicio" class="tela ativa">
+  <div class="caixa central">
+    <h1 class="titulo">Cripta<br><span>de Cristal</span></h1>
+    <p class="sub">Desça pelas masmorras de cristal, sozinho ou com quem você ama.</p>
+    <label class="campo">Seu nome <input id="nome" maxlength="14" autocomplete="off" placeholder="Herói"></label>
+    <div class="botoes">
+      <button class="btn grande" id="bSolo">⚔️ Jogar sozinho</button>
+      <button class="btn grande roxo" id="bCriar">🏰 Criar sala</button>
+      <div class="linha">
+        <input id="codigo" maxlength="4" placeholder="CÓDIGO" autocomplete="off" autocapitalize="characters">
+        <button class="btn roxo" id="bEntrar">Entrar</button>
+      </div>
+    </div>
+    <p id="erroInicio" class="erro"></p>
+    <button class="link" id="bComo">Como jogar</button>
+  </div>
+  <a class="voltarPortal" href="../">‹ Jogos</a>
+</section>
+
+<!-- ===== ESCOLHA DO HERÓI ===== -->
+<section id="telaHeroi" class="tela">
+  <div class="heroiLayout">
+    <div class="destaque">
+      <canvas id="previewGrande" width="360" height="360"></canvas>
+      <div class="sexo">
+        <button id="bHomem" class="chip ativo">♂ Homem</button>
+        <button id="bMulher" class="chip">♀ Mulher</button>
+      </div>
+    </div>
+    <div class="lado">
+      <h2 id="heroiNome">Cavaleiro</h2>
+      <p id="heroiDesc" class="desc"></p>
+      <div id="heroiStats" class="stats"></div>
+      <div id="cartas" class="cartas"></div>
+      <div class="botoes linha">
+        <button class="btn fantasma" id="bVoltarHeroi">‹ Voltar</button>
+        <button class="btn grande" id="bConfirmarHeroi">Escolher ✔</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SALA ===== -->
+<section id="telaSala" class="tela">
+  <div class="caixa central">
+    <p class="sub">Código da sala</p>
+    <div id="codigoSala" class="codigo">----</div>
+    <p class="dica">Passe o código pro seu par entrar (até 4 heróis).</p>
+    <ul id="listaJogadores" class="jogadores"></ul>
+    <div class="botoes">
+      <button class="btn roxo" id="bTrocarHeroi">Trocar herói</button>
+      <button class="btn grande" id="bComecar">Começar aventura ▸</button>
+      <p id="esperando" class="dica">Esperando o anfitrião começar…</p>
+      <button class="btn fantasma" id="bSairSala">Sair da sala</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===== HUD / CONTROLES ===== -->
+<div id="hud" class="escondido">
+  <div id="toque" class="toque">
+    <div id="joy"><div id="joyBase"><div id="joyPino"></div></div><span class="dicaJoy">mover</span></div>
+    <div class="acoes">
+      <button data-acao="pocao" class="bAcao bPocao" id="bPocao">🧪<b id="nPocao">2</b></button>
+      <button data-acao="hab" class="bAcao bHab" id="bHab"><span id="habNome">Hab.</span></button>
+      <button data-acao="rolar" class="bAcao bRolar">⟳</button>
+      <button data-acao="atacar" class="bAcao bAtacar">⚔</button>
+      <button data-acao="pular" class="bAcao bPular">▲</button>
+    </div>
+  </div>
+  <button id="bPausa" class="bPausa">❚❚</button>
+</div>
+
+<!-- ===== ALTAR (entre andares) ===== -->
+<section id="telaAltar" class="tela sobre">
+  <div class="caixa central larga">
+    <h2>Altar de Cristal</h2>
+    <p class="sub" id="altarSub">Escolha uma bênção</p>
+    <div id="bencaos" class="bencaos"></div>
+    <div class="loja">
+      <button class="btn roxo" id="bComprarFrasco">+1 frasco de poção · <b id="precoFrasco">60</b> 💎</button>
+      <span class="cristais">💎 <b id="altarCristais">0</b></span>
+    </div>
+    <p id="altarEspera" class="dica"></p>
+  </div>
+</section>
+
+<!-- ===== FIM ===== -->
+<section id="telaFim" class="tela sobre">
+  <div class="caixa central">
+    <h2 id="fimTitulo">Fim da jornada</h2>
+    <p id="fimTexto" class="sub"></p>
+    <div id="fimStats" class="stats grande"></div>
+    <div class="botoes">
+      <button class="btn grande" id="bDeNovo">Jogar de novo</button>
+      <button class="btn roxo" id="bContinuar" hidden>Continuar descendo ▸</button>
+      <p id="fimEspera" class="dica"></p>
+      <button class="btn fantasma" id="bMenu">Menu</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===== PAUSA ===== -->
+<section id="telaPausa" class="tela sobre">
+  <div class="caixa central">
+    <h2>Pausa</h2>
+    <p id="pausaAviso" class="dica"></p>
+    <div class="botoes">
+      <button class="btn grande" id="bContinuarPausa">Continuar</button>
+      <button class="btn roxo" id="bSom">🔊 Som ligado</button>
+      <button class="btn fantasma" id="bDesistir">Sair para o menu</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===== COMO JOGAR ===== -->
+<section id="telaComo" class="tela sobre">
+  <div class="caixa central larga texto">
+    <h2>Como jogar</h2>
+    <p>Atravesse cada andar até o <b>portal</b> no fim. A cada 3 andares, um <b>chefe</b> espera no Trono do Prisma.</p>
+    <ul>
+      <li><b>Celular:</b> deite o celular. Arraste o polegar esquerdo para andar (puxe pra baixo pra descer de plataformas). Botões: ▲ pular, ⚔ atacar (aperte várias vezes pra combo), ⟳ rolar (atravessa golpes), habilidade e 🧪 poção.</li>
+      <li><b>Computador:</b> ← → andar, Espaço pular, J atacar, K habilidade, L ou Shift rolar, Q poção, Esc pausa.</li>
+      <li>Monstros brilham em <b style="color:#ff6080">vermelho</b> antes de atacar: role!</li>
+      <li>Com amigos: quem cai fica no chão — fique perto por 2 segundos pra levantar. A Luz Sagrada do Padre também levanta.</li>
+      <li>No altar entre os andares, cada um escolhe a sua bênção.</li>
+    </ul>
+    <button class="btn grande" id="bFecharComo">Bora!</button>
+  </div>
+</section>
+
+<div id="aviso" class="aviso"></div>
+<div id="girar" class="girar"><div>📱↻<br>Deite o celular pra jogar</div></div>
+
+<script type="module" src="js/jogo.js"></script>
+</body>
+</html>
