@@ -2,6 +2,7 @@
 import { T, clamp, lerp, sinal, rng, hash, toca } from './util.js';
 import { gerarNivel, bloco, biomaDo, ehChefe, BIOMAS, ANDARES_POR_CICLO } from './nivel.js';
 import { criarFundo, desenharFundo, criarBlocos, desenharEnfeite, desenharPortal, varianteBloco, brilho, rgba, cristal } from './arte.js';
+const brilhoArte = brilho;
 import { CLASSES, ORDEM, nomeClasse, calcularPose, desenharHeroi } from './herois.js';
 import { DEFS, TIPOS, ESTADOS, criarInimigo, atualizarInimigo, caixaGolpe, danoGolpe, corpo, desenharInimigo, desenharProjetil, desenharZona, caixaZona } from './inimigos.js';
 import { moverCorpo, solido } from './fisica.js';
@@ -392,7 +393,7 @@ function atualizarEu(dt) {
   // rolar
   if (h.rolarT <= 0 && h.habT <= 0 && h.rolarCd <= 0 && consumir('rolar', 160)) {
     h.rolarT = ROLAR; h.rolarCd = 0.45; if (mx) h.d = mx; h.invT = Math.max(h.invT, 0.32); h.atk = null; som.rolar();
-    efeitoBlink(h.x, h.y, CLASSES[h.classe].cor);
+    efeitoBlink(h.x, h.y, CLASSES[h.classe].cor, h.classe);
   }
   // habilidade
   if (h.rolarT <= 0 && h.habT <= 0 && h.habCd <= 0 && consumir('hab', 160)) usarHabilidade(h);
@@ -454,7 +455,7 @@ function atualizarEu(dt) {
   h.grav = 1;
   if (h.rolarT > 0) {
     h.rolarT -= dt;
-    if (h.rolarT <= 0) efeitoBlink(h.x, h.y, CLASSES[h.classe].cor);
+    if (h.rolarT <= 0) efeitoBlink(h.x, h.y, CLASSES[h.classe].cor, h.classe);
     h.vx = h.d * 1000 * (0.6 + 0.4 * (h.rolarT / ROLAR)); h.grav = 0; h.vy = 0;
   } else if (h.habT > 0) {
     h.habT -= dt;
@@ -536,7 +537,16 @@ function reviver(frac) {
 function efeitoCorte(x, y, d, at, cor, combo) {
   P.fx.push({ tipo: at.tipo || 'corte', x, y, d, t: 0, dur: at.forte ? 0.28 : 0.2, cor, alc: at.alc || 70, alt: at.alt || 60, forte: !!at.forte, combo });
 }
-function efeitoBlink(x, y, cor) {
+function efeitoBlink(x, y, cor, classe) {
+  if (classe === 'mago') {
+    // portal arcano: círculo de runas + faíscas de cristal azul e lilás
+    P.fx.push({ tipo: 'runa', x, y: y - 50, t: 0, dur: 0.45 });
+    for (let i = 0; i < 18; i++) {
+      const a = Math.random() * 7, v = 40 + Math.random() * 160;
+      P.parts.push({ x: x + Math.cos(a) * 10, y: y - 50 + Math.sin(a) * 30, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60, vida: 0.6, max: 0.6, cor: i % 2 ? '#9fd8ff' : '#d6b3ff', tam: 2 + Math.random() * 3, grav: -0.1 });
+    }
+    return;
+  }
   P.fx.push({ tipo: 'anel', x, y: y - 45, t: 0, dur: 0.25, cor, raio: 45 });
   for (let i = 0; i < 12; i++) { const a = Math.random() * 7, v = 80 + Math.random() * 200; P.parts.push({ x, y: y - 20 - Math.random() * 60, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vida: 0.3, max: 0.3, cor: '#fff', tam: 2 + Math.random() * 2, grav: 0 }); }
 }
@@ -623,7 +633,7 @@ function atualizarOutros(dt) {
     o.x = lerp(o.x, st.x + (st.vx || 0) * 0.06, Math.min(1, dt * 14));
     o.y = lerp(o.y, st.y + (st.vy || 0) * 0.03, Math.min(1, dt * 14));
     o.passo += Math.abs(st.vx || 0) * dt * 0.045;
-    if ((st.a === 'rolar') !== (o.ultA === 'rolar')) efeitoBlink(st.x, st.y, CLASSES[st.c]?.cor || '#fff');
+    if ((st.a === 'rolar') !== (o.ultA === 'rolar')) efeitoBlink(st.x, st.y, CLASSES[st.c]?.cor || '#fff', st.c);
     o.ultA = st.a;
     if (st.ak !== o.ak) {
       o.ak = st.ak;
@@ -852,8 +862,25 @@ function desenharHeroiMundo(c, x, y, d, classe, sexo, pose, t, extra) {
   // sombra
   if (extra.chao !== false) { c.fillStyle = 'rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(0, 0, 18, 4, 0, 0, 7); c.fill(); }
   if (pose.src && pose.src.anim === 'rolar') {
-    // blink: tracinhos de velocidade atrás do herói
     c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round';
+    if (classe === 'mago') {
+      // blink arcano: rastro de orbes e estrelinhas de cristal
+      for (let i = 0; i < 9; i++) {
+        const k = i / 8, x0 = -10 - k * 150, y0 = -50 + Math.sin(t * 18 + i * 1.3) * 18 * k;
+        c.globalAlpha = 0.85 * (1 - k);
+        const r = 26 * (1 - k * 0.6);
+        c.drawImage(brilhoArte(i % 2 ? 'rgba(159,216,255,.9)' : 'rgba(200,150,255,.9)', 32), x0 - r, y0 - r, r * 2, r * 2);
+        c.fillStyle = '#ffffff';
+        const e = 5 * (1 - k) * (0.6 + 0.4 * Math.sin(t * 30 + i));
+        c.beginPath(); c.moveTo(x0, y0 - e * 2); c.lineTo(x0 + e * 0.5, y0); c.lineTo(x0, y0 + e * 2); c.lineTo(x0 - e * 0.5, y0); c.closePath(); c.fill();
+        c.beginPath(); c.moveTo(x0 - e * 2, y0); c.lineTo(x0, y0 + e * 0.5); c.lineTo(x0 + e * 2, y0); c.lineTo(x0, y0 - e * 0.5); c.closePath(); c.fill();
+      }
+      c.restore();
+      desenharHeroi(c, classe, sexo, pose, t, extra);
+      c.restore();
+      return;
+    }
+    // blink: tracinhos de velocidade atrás do herói
     const cor = CLASSES[classe]?.cor || '#fff';
     for (let i = 0; i < 9; i++) {
       const y0 = -10 - i * 10, ini = -8 - ((i * 37) % 23), len = 40 + ((i * 53 + Math.floor(t * 30) * 17) % 70);
@@ -912,6 +939,17 @@ function desenharFx(c, f) {
     g.addColorStop(0, 'rgba(255,243,176,0)'); g.addColorStop(0.5, 'rgba(255,243,176,.85)'); g.addColorStop(1, 'rgba(255,243,176,0)');
     c.fillStyle = g; c.fillRect(f.x - 70, f.y - 700, 140, 700);
     c.drawImage(brilho('rgba(255,243,176,.9)', 96), f.x - 230, f.y - 140, 460, 280);
+  } else if (f.tipo === 'runa') {
+    // círculo mágico em pé (de lado), girando e sumindo
+    const ab = Math.min(1, k * 4), some = 1 - Math.max(0, (k - 0.5) * 2);
+    c.globalAlpha = some; c.translate(f.x, f.y);
+    c.drawImage(brilho('rgba(159,216,255,.8)', 64), -50, -75, 100, 150);
+    c.strokeStyle = '#bfe6ff'; c.lineWidth = 2.5;
+    c.beginPath(); c.ellipse(0, 0, 16 * ab, 58 * ab, 0, 0, 7); c.stroke();
+    c.strokeStyle = '#d6b3ff'; c.lineWidth = 1.5;
+    c.beginPath(); c.ellipse(0, 0, 11 * ab, 42 * ab, 0, 0, 7); c.stroke();
+    c.fillStyle = '#ffffff';
+    for (let i = 0; i < 10; i++) { const a = f.t * 6 + i * 0.628; c.fillRect(Math.cos(a) * 14 * ab - 1.5, Math.sin(a) * 50 * ab - 1.5, 3, 3); }
   } else if (f.tipo === 'rastro') {
     c.globalAlpha = (1 - k) * 0.7; c.fillStyle = f.cor;
     c.fillRect(Math.min(f.x, f.x - f.d * 160), f.y - 60, 160, 50);

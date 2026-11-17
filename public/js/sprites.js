@@ -11,7 +11,7 @@ const DEFS = {
   cavaleiro_m: { pulo: [6, 7, 8, 9, 10, 11], golpe: { atk1: 7, atk2: 6 },
     combo: [['atk1', 3, 7, 9], ['atk2', 3, 6, 9], ['atk1', 4, 7, 15]] },
   mago_f: { pulo: [1, 3, 5, 7, 9, 11, 13], golpe: { atk1: 5 }, combo: [['atk1', 1, 5, 9], ['atk1', 2, 5, 9], ['atk1', 1, 6, 15]], semFerido: true, vaivem: true },
-  cavaleiro_f: { pulo: [3, 4, 5, 6, 7, 8, 9], golpe: { atk1: 10 },
+  cavaleiro_f: { pulo: [3, 4, 5, 6, 7, 8, 9], golpe: { atk1: 10 }, ritmo: 0.62,
     combo: [['atk1', 6, 10, 11], ['atk1', 11, 8, 7], ['atk1', 7, 10, 16]] },   // desce, sobe (golpe de volta), desce forte
 };
 
@@ -38,7 +38,7 @@ export function temSprite(classe, sexo) { const s = cache[nomeDe(classe, sexo)];
 function quadro(nome, src, t) {
   const d = DEFS[nome], a = src.anim;
   const um = (anim, i) => [anim, i];
-  if (a === 'correr' || a === 'rolar') return um('correr', (src.passo || t * 10) / (Math.PI * 2) * nQuadros(nome, 'correr'));
+  if (a === 'correr' || a === 'rolar') return um('correr', (src.passo || t * 10) / (Math.PI * 2) * nQuadros(nome, 'correr') * (d.ritmo || 1));
   if (a === 'pular' || a === 'cair') {
     const k = clamp(((src.vy || 0) + 830) / 1430, 0, 0.999);
     return um('pular', d.pulo[Math.floor(k * d.pulo.length)]);
