@@ -19,7 +19,7 @@
 - O anfitrião simula os monstros e publica uma "foto" deles ~10x por segundo (`inimigos`).
   Cada jogador simula o próprio herói, publica o `estado` e manda os `golpes` que acertou.
   Dano no herói, tesouro e bênçãos são calculados em cada celular.
-- `database.rules.json` daqui tem as regras do projeto INTEIRO (Forma Palavras + Pé na Tábua + Cripta).
+- `database.rules.json` daqui tem as regras do projeto INTEIRO (Forma Palavras + Pé na Tábua + Torre Bamba + Cripta).
   O Firebase só tem um arquivo de regras: ao mudar, mantenha as outras partes iguais e peça pro Lucas
   colar no Console (Realtime Database → Regras). Se outro jogo novo também acrescentou regras,
   junte os blocos — não substitua.
