@@ -27,3 +27,10 @@ no seu celular (salas com código de 4 letras).
 | `public/js/controles.js` | Teclado e toque |
 | `public/js/som.js` | Sons e música (gerados na hora) |
 | `public/js/rede.js` | Salas no Firebase (`cripta/rooms/...`) |
+
+## Arte
+
+- Cavaleiro e Cavaleira usam os pacotes grátis "Anime Hero" e "Anime Swordswoman" de
+  [reinvogames](https://reinvogames.itch.io) (licença royalty-free: pode usar no jogo, não pode redistribuir os arquivos).
+  Os pacotes originais NÃO ficam aqui; `ferramentas/montar_sprites.py` gera as folhas de `public/sprites/` a partir deles.
+- Os outros heróis ainda são desenhados por código (`herois.js`).

@@ -1,10 +1,11 @@
+import { temSprite, desenharSprite } from './sprites.js';
 // Os 6 heróis: números de cada classe e o desenho (boneco articulado, em vetor).
 // Cada um tem versão homem e mulher.
 
 export const CLASSES = {
   cavaleiro: {
     nome: 'Cavaleiro', nomeF: 'Cavaleira', cor: '#9fd3ff', vida: 165, vel: 235,
-    desc: 'Espada pesada e muita vida. Habilidade: Investida do Escudo (avança derrubando tudo, sem levar dano).',
+    desc: 'Espada pesada e muita vida. Habilidade: Investida (avança derrubando tudo, sem levar dano).',
     hab: 'Investida', habCd: 5,
     ataques: [
       { dur: 0.36, ini: 0.11, fim: 0.24, dano: 20, alc: 78, alt: 64, kb: 240, tipo: 'corte' },
@@ -100,6 +101,7 @@ export function calcularPose(h, t) {
     pf: 0.12, cf: 0, pt: -0.12, ct: 0,        // pernas: frente/trás (coxa, canela)
     bf: 0.15, af: 0.5, bt: -0.1, at: 0.4,      // braços: frente/trás
     incl: 0, bob: 0, armaOff: Math.PI / 2, rot: 0, deitado: false,
+    src: { anim: h.anim, fase: h.fase, combo: h.combo, vy: h.vy, passo: h.passo, fimRel: h.ataqueInfo && h.ataqueInfo.fimRel },
   };
   const e = h.anim;
   const resp = Math.sin(t * 2.4) * 1.2;
@@ -114,8 +116,7 @@ export function calcularPose(h, t) {
   } else if (e === 'cair') {
     p.pf = 0.35; p.cf = -0.5; p.pt = -0.35; p.ct = -0.3; p.bf = 2.0; p.af = 0.5; p.bt = 1.8; p.at = 0.4;
   } else if (e === 'rolar') {
-    p.pf = 2.0; p.cf = -2.5; p.pt = 1.7; p.ct = -2.4; p.bf = 1.6; p.af = 1.6; p.bt = 1.4; p.at = 1.6;
-    p.rot = h.fase * Math.PI * 2; p.bob = 22;
+    p.pf = 0.9; p.cf = -0.6; p.pt = -0.9; p.ct = -0.4; p.bf = -1.0; p.af = 0.4; p.bt = -1.2; p.at = 0.3; p.incl = 0.45;
   } else if (e === 'ferido') {
     p.incl = -0.25; p.bf = -0.6; p.bt = -0.9; p.pf = 0.3; p.pt = -0.3;
   } else if (e === 'caido') {
@@ -155,10 +156,12 @@ export function calcularPose(h, t) {
 
 // desenha o herói com os pés em (0,0), virado para a direita (quem chama inverte)
 export function desenharHeroi(c, classe, sexo, p, t, extra = {}) {
+  if (p.src && temSprite(classe, sexo)) { desenharSprite(c, classe, sexo, p.src, t, p.src.anim === 'rolar' ? 0.18 : 1); return; }
   const V = VISUAL[classe], F = sexo === 'f';
   const pele = classe === 'lobisomem' && F ? V.peleF : V.pele;
   const roupa = classe === 'lobisomem' && F ? V.peleF : V.roupa;
   c.save();
+  if (p.src && p.src.anim === 'rolar') c.globalAlpha *= 0.18;
   c.lineCap = 'round'; c.lineJoin = 'round';
   if (p.deitado) { c.translate(-30, -6); c.rotate(-Math.PI / 2 + 0.08); c.translate(0, 34); }
   if (p.rot) { c.translate(0, -30 + p.bob); c.rotate(p.rot); c.translate(0, 30 - p.bob); }

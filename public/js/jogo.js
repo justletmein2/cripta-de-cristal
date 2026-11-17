@@ -8,6 +8,8 @@ import { moverCorpo, solido } from './fisica.js';
 import { ctrl, consumir, temPedido, ligarControles } from './controles.js';
 import { som, iniciarSom, musica, alternarSom } from './som.js';
 import * as rede from './rede.js';
+import { carregarSprites } from './sprites.js';
+carregarSprites(['cavaleiro_m', 'cavaleiro_f']);
 
 const $ = s => document.querySelector(s);
 const cv = $('#tela'), ctx = cv.getContext('2d');
@@ -389,6 +391,7 @@ function atualizarEu(dt) {
   // rolar
   if (h.rolarT <= 0 && h.habT <= 0 && h.rolarCd <= 0 && consumir('rolar', 160)) {
     h.rolarT = 0.34; h.rolarCd = 0.5; if (mx) h.d = mx; h.invT = Math.max(h.invT, 0.32); h.atk = null; som.rolar();
+    efeitoBlink(h.x, h.y, CLASSES[h.classe].cor);
   }
   // habilidade
   if (h.rolarT <= 0 && h.habT <= 0 && h.habCd <= 0 && consumir('hab', 160)) usarHabilidade(h);
@@ -450,6 +453,7 @@ function atualizarEu(dt) {
   h.grav = 1;
   if (h.rolarT > 0) {
     h.rolarT -= dt;
+    if (h.rolarT <= 0) efeitoBlink(h.x, h.y, CLASSES[h.classe].cor);
     h.vx = h.d * 520 * (0.55 + 0.45 * (h.rolarT / 0.34));
   } else if (h.habT > 0) {
     h.habT -= dt;
@@ -492,7 +496,7 @@ function atualizarEu(dt) {
   if (h.habT > 0) { h.anim = 'hab'; h.fase = 1 - h.habT / h.habDur; h.ataqueInfo = { fimRel: 0.3 }; }
   else if (h.atk) { h.anim = 'atacar'; h.fase = h.atkT / (h.atk.dur / atkVel); h.ataqueInfo = { fimRel: h.atk.fim / h.atk.dur }; }
   else if (h.rolarT > 0) { h.anim = 'rolar'; h.fase = 1 - h.rolarT / 0.34; }
-  else if (h.feridoT > 0) h.anim = 'ferido';
+  else if (h.feridoT > 0) { h.anim = 'ferido'; h.fase = 1 - h.feridoT / 0.22; }
   else if (!h.noChao) h.anim = h.vy < 0 ? 'pular' : 'cair';
   else if (Math.abs(h.vx) > 20) h.anim = 'correr';
   else h.anim = 'parado';
@@ -530,6 +534,10 @@ function reviver(frac) {
 // ---------- efeitos ----------
 function efeitoCorte(x, y, d, at, cor, combo) {
   P.fx.push({ tipo: at.tipo || 'corte', x, y, d, t: 0, dur: at.forte ? 0.28 : 0.2, cor, alc: at.alc || 70, alt: at.alt || 60, forte: !!at.forte, combo });
+}
+function efeitoBlink(x, y, cor) {
+  P.fx.push({ tipo: 'anel', x, y: y - 45, t: 0, dur: 0.25, cor, raio: 45 });
+  for (let i = 0; i < 12; i++) { const a = Math.random() * 7, v = 80 + Math.random() * 200; P.parts.push({ x, y: y - 20 - Math.random() * 60, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vida: 0.3, max: 0.3, cor: '#fff', tam: 2 + Math.random() * 2, grav: 0 }); }
 }
 function numero(x, y, v, cor, grande) { P.nums.push({ x: x + (Math.random() - 0.5) * 16, y, v, cor, t: 0, grande }); }
 function faiscas(x, y, cor, n) {
@@ -614,6 +622,8 @@ function atualizarOutros(dt) {
     o.x = lerp(o.x, st.x + (st.vx || 0) * 0.06, Math.min(1, dt * 14));
     o.y = lerp(o.y, st.y + (st.vy || 0) * 0.03, Math.min(1, dt * 14));
     o.passo += Math.abs(st.vx || 0) * dt * 0.045;
+    if ((st.a === 'rolar') !== (o.ultA === 'rolar')) efeitoBlink(st.x, st.y, CLASSES[st.c]?.cor || '#fff');
+    o.ultA = st.a;
     if (st.ak !== o.ak) {
       o.ak = st.ak;
       const C = CLASSES[st.c];
@@ -761,7 +771,7 @@ function desenhar() {
   // outros heróis
   for (const [u, o] of Object.entries(P.outros)) {
     const st = o.st;
-    const pose = calcularPose({ anim: st.a, fase: st.f, passo: o.passo, combo: st.cb, classe: st.c, ataqueInfo: { fimRel: fimRelDe(st) } }, t);
+    const pose = calcularPose({ anim: st.a, fase: st.f, passo: o.passo, combo: st.cb, classe: st.c, vy: st.vy, ataqueInfo: { fimRel: fimRelDe(st) } }, t);
     desenharHeroiMundo(c, o.x, o.y, st.d, st.c, st.s, pose, t, { vx: st.vx, furia: st.fu, alpha: 1 });
     // nome e vida
     c.font = '700 13px Nunito, sans-serif'; c.textAlign = 'center';
@@ -840,6 +850,18 @@ function desenharHeroiMundo(c, x, y, d, classe, sexo, pose, t, extra) {
   c.globalAlpha = extra.alpha ?? 1;
   // sombra
   c.fillStyle = 'rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(0, 0, 18, 4, 0, 0, 7); c.fill();
+  if (pose.src && pose.src.anim === 'rolar') {
+    // blink: tracinhos de velocidade atrás do herói
+    c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round';
+    const cor = CLASSES[classe]?.cor || '#fff';
+    for (let i = 0; i < 9; i++) {
+      const y0 = -10 - i * 10, ini = -8 - ((i * 37) % 23), len = 40 + ((i * 53 + Math.floor(t * 30) * 17) % 70);
+      c.globalAlpha = 0.35 + 0.5 * ((i * 29) % 7) / 7;
+      c.strokeStyle = i % 3 ? cor : '#ffffff'; c.lineWidth = i % 3 ? 2.5 : 1.5;
+      c.beginPath(); c.moveTo(ini, y0); c.lineTo(ini - len, y0); c.stroke();
+    }
+    c.restore();
+  }
   desenharHeroi(c, classe, sexo, pose, t, extra);
   c.restore();
 }
