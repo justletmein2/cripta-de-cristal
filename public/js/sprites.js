@@ -7,8 +7,11 @@ const K = 0.7;    // pixels do mundo por pixel da folha (herói com ~110px de al
 
 // quadros especiais de cada folha
 const DEFS = {
-  cavaleiro_m: { pulo: [6, 7, 8, 9, 10, 11], golpe: { atk1: 7, atk2: 6 }, combo: ['atk1', 'atk2', 'atk1'] },
-  cavaleiro_f: { pulo: [3, 4, 5, 6, 7, 8, 9], golpe: { atk1: 10 }, combo: ['atk1', 'atk1', 'atk1'] },
+  // combo: cada golpe toca só um trecho da folha [início, impacto, fim], pra emendar sem voltar à pose parada
+  cavaleiro_m: { pulo: [6, 7, 8, 9, 10, 11], golpe: { atk1: 7, atk2: 6 },
+    combo: [['atk1', 3, 7, 9], ['atk2', 3, 6, 9], ['atk1', 4, 7, 15]] },
+  cavaleiro_f: { pulo: [3, 4, 5, 6, 7, 8, 9], golpe: { atk1: 10 },
+    combo: [['atk1', 6, 10, 11], ['atk1', 11, 8, 7], ['atk1', 7, 10, 16]] },   // desce, sobe (golpe de volta), desce forte
 };
 
 const cache = {};
@@ -40,9 +43,9 @@ function quadro(nome, src, t) {
     return um('pular', d.pulo[Math.floor(k * d.pulo.length)]);
   }
   if (a === 'atacar') {
-    const anim = d.combo[(src.combo || 0) % d.combo.length];
-    const impacto = d.golpe[anim], f = clamp(src.fase || 0, 0, 1), fr = clamp((src.fimRel || 0.6) * 0.7, 0.15, 0.85);
-    return um(anim, f < fr ? (f / fr) * impacto : impacto + (f - fr) / (1 - fr) * 99);
+    const [anim, ini, imp, fim] = d.combo[(src.combo || 0) % d.combo.length];
+    const f = clamp(src.fase || 0, 0, 1), fr = clamp((src.fimRel || 0.6) * 0.7, 0.15, 0.85);
+    return um(anim, f < fr ? ini + (f / fr) * (imp - ini) : imp + (f - fr) / (1 - fr) * (fim - imp));
   }
   if (a === 'hab') return um('atk1', d.golpe.atk1);
   if (a === 'ferido') return um('ferido', (src.fase || 0) * 99);

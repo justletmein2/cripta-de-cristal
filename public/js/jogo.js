@@ -315,6 +315,7 @@ function ferirHeroi(dano, kdir) {
   }
 }
 let vermelho = 0;
+const ROLAR = 0.3;   // duração do blink (esquiva)
 
 // caixa de acerto do ataque à frente do herói
 function caixaAtaque(h, at) {
@@ -390,7 +391,7 @@ function atualizarEu(dt) {
 
   // rolar
   if (h.rolarT <= 0 && h.habT <= 0 && h.rolarCd <= 0 && consumir('rolar', 160)) {
-    h.rolarT = 0.34; h.rolarCd = 0.5; if (mx) h.d = mx; h.invT = Math.max(h.invT, 0.32); h.atk = null; som.rolar();
+    h.rolarT = ROLAR; h.rolarCd = 0.45; if (mx) h.d = mx; h.invT = Math.max(h.invT, 0.32); h.atk = null; som.rolar();
     efeitoBlink(h.x, h.y, CLASSES[h.classe].cor);
   }
   // habilidade
@@ -404,11 +405,11 @@ function atualizarEu(dt) {
   }
   // ataque (com combo e "fila" de botão)
   const ats = C.ataques;
-  if (h.rolarT <= 0 && h.habT <= 0 && temPedido('atacar', 260)) {
+  if (h.rolarT <= 0 && h.habT <= 0 && temPedido('atacar', 380)) {
     const at = h.atk;
     const livre = !at || h.atkT >= at.fim / atkVel;
     if (livre) {
-      consumir('atacar', 300);
+      consumir('atacar', 400);
       h.combo = (at || h.comboT > 0) ? (h.combo + 1) % ats.length : 0;
       h.atk = ats[h.combo]; h.atkT = 0; h.acertados.clear(); h.tiroFeito = false; h.corteFeito = false; h.ak++;
       if (mx) h.d = mx;
@@ -454,7 +455,7 @@ function atualizarEu(dt) {
   if (h.rolarT > 0) {
     h.rolarT -= dt;
     if (h.rolarT <= 0) efeitoBlink(h.x, h.y, CLASSES[h.classe].cor);
-    h.vx = h.d * 520 * (0.55 + 0.45 * (h.rolarT / 0.34));
+    h.vx = h.d * 1000 * (0.6 + 0.4 * (h.rolarT / ROLAR)); h.grav = 0; h.vy = 0;
   } else if (h.habT > 0) {
     h.habT -= dt;
     const k = h.classe;
@@ -473,8 +474,8 @@ function atualizarEu(dt) {
     if (h.habT <= 0 && (k === 'cavaleiro' || k === 'vampiro' || k === 'monge')) h.vx *= 0.3;
   } else {
     let alvo = mx * velMax;
-    if (h.atk) alvo *= 0.25;
-    const acel = h.noChao ? 3400 : 2300;
+    if (h.atk) alvo *= 0.35;
+    const acel = h.noChao ? 4800 : 3200;
     if (h.feridoT <= 0) h.vx = Math.abs(alvo - h.vx) < acel * dt ? alvo : h.vx + Math.sign(alvo - h.vx) * acel * dt;
     if (mx && !h.atk) h.d = mx;
   }
@@ -495,7 +496,7 @@ function atualizarEu(dt) {
   // animação
   if (h.habT > 0) { h.anim = 'hab'; h.fase = 1 - h.habT / h.habDur; h.ataqueInfo = { fimRel: 0.3 }; }
   else if (h.atk) { h.anim = 'atacar'; h.fase = h.atkT / (h.atk.dur / atkVel); h.ataqueInfo = { fimRel: h.atk.fim / h.atk.dur }; }
-  else if (h.rolarT > 0) { h.anim = 'rolar'; h.fase = 1 - h.rolarT / 0.34; }
+  else if (h.rolarT > 0) { h.anim = 'rolar'; h.fase = 1 - h.rolarT / ROLAR; }
   else if (h.feridoT > 0) { h.anim = 'ferido'; h.fase = 1 - h.feridoT / 0.22; }
   else if (!h.noChao) h.anim = h.vy < 0 ? 'pular' : 'cair';
   else if (Math.abs(h.vx) > 20) h.anim = 'correr';
@@ -647,7 +648,7 @@ function meuEstado() {
   return {
     x: Math.round(h.x), y: Math.round(h.y), vx: Math.round(h.vx), vy: Math.round(h.vy), d: h.d, a: h.anim, f: Math.round(h.fase * 100) / 100,
     cb: h.combo, ak: h.ak, c: h.classe, s: h.sexo, n: G.nome || 'Herói', hp: Math.round(h.hp), mhp: h.mhp, cai: h.caido, por: h.naPorta,
-    and: P.andar, fu: h.furiaT > 0, rv: Math.round(h.reviveT * 10) / 10,
+    and: P.andar, fu: h.furiaT > 0, ch: h.noChao ? 1 : 0, rv: Math.round(h.reviveT * 10) / 10,
     ps: P.tiros.length ? P.tiros.map(s => [Math.round(s.x), Math.round(s.y), Math.round(s.vx), s.raio]) : 0,
     fx: h.fx || 0, t: rede.agora(),
   };
@@ -772,7 +773,7 @@ function desenhar() {
   for (const [u, o] of Object.entries(P.outros)) {
     const st = o.st;
     const pose = calcularPose({ anim: st.a, fase: st.f, passo: o.passo, combo: st.cb, classe: st.c, vy: st.vy, ataqueInfo: { fimRel: fimRelDe(st) } }, t);
-    desenharHeroiMundo(c, o.x, o.y, st.d, st.c, st.s, pose, t, { vx: st.vx, furia: st.fu, alpha: 1 });
+    desenharHeroiMundo(c, o.x, o.y, st.d, st.c, st.s, pose, t, { vx: st.vx, furia: st.fu, alpha: 1, chao: st.ch !== 0 });
     // nome e vida
     c.font = '700 13px Nunito, sans-serif'; c.textAlign = 'center';
     c.fillStyle = 'rgba(0,0,0,.6)'; c.fillRect(o.x - 24, o.y - 100, 48, 5);
@@ -791,7 +792,7 @@ function desenhar() {
   if (h.invT > 0 && !h.caido && h.rolarT <= 0 && h.habT <= 0) alpha = Math.sin(t * 40) > 0 ? 0.45 : 1;
   if (h.classe === 'vampiro' && h.habT > 0) alpha = 0.15;
   if (h.furiaT > 0) { c.save(); c.globalCompositeOperation = 'lighter'; c.drawImage(brilho('rgba(255,90,40,.7)', 64), h.x - 60, h.y - 110, 120, 120); c.restore(); }
-  desenharHeroiMundo(c, h.x, h.y, h.d, h.classe, h.sexo, pose, t, { vx: h.vx, furia: h.furiaT > 0, alpha });
+  desenharHeroiMundo(c, h.x, h.y, h.d, h.classe, h.sexo, pose, t, { vx: h.vx, furia: h.furiaT > 0, alpha, chao: !!h.noChao });
   if (h.caido) {
     c.strokeStyle = '#ffe28a'; c.lineWidth = 4; c.beginPath(); c.arc(h.x, h.y - 50, 20, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (h.reviveT / 2)); c.stroke();
   }
@@ -849,7 +850,7 @@ function desenharHeroiMundo(c, x, y, d, classe, sexo, pose, t, extra) {
   c.save(); c.translate(x, y); c.scale(d < 0 ? -1 : 1, 1);
   c.globalAlpha = extra.alpha ?? 1;
   // sombra
-  c.fillStyle = 'rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(0, 0, 18, 4, 0, 0, 7); c.fill();
+  if (extra.chao !== false) { c.fillStyle = 'rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(0, 0, 18, 4, 0, 0, 7); c.fill(); }
   if (pose.src && pose.src.anim === 'rolar') {
     // blink: tracinhos de velocidade atrás do herói
     c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round';

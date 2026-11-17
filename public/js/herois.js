@@ -4,7 +4,7 @@ import { temSprite, desenharSprite } from './sprites.js';
 
 export const CLASSES = {
   cavaleiro: {
-    nome: 'Cavaleiro', nomeF: 'Cavaleira', cor: '#9fd3ff', vida: 165, vel: 235,
+    nome: 'Cavaleiro', nomeF: 'Cavaleira', cor: '#9fd3ff', vida: 165, vel: 325,
     desc: 'Espada pesada e muita vida. Habilidade: Investida (avança derrubando tudo, sem levar dano).',
     hab: 'Investida', habCd: 5,
     ataques: [
@@ -14,7 +14,7 @@ export const CLASSES = {
     ],
   },
   mago: {
-    nome: 'Mago', nomeF: 'Maga', cor: '#c79bff', vida: 95, vel: 225,
+    nome: 'Mago', nomeF: 'Maga', cor: '#c79bff', vida: 95, vel: 310,
     desc: 'Ataca de longe com setas de cristal. Habilidade: Chuva de Cristais (meteoros caem à frente).',
     hab: 'Chuva', habCd: 7,
     ataques: [
@@ -24,7 +24,7 @@ export const CLASSES = {
     ],
   },
   vampiro: {
-    nome: 'Vampiro', nomeF: 'Vampira', cor: '#ff4d6d', vida: 115, vel: 265,
+    nome: 'Vampiro', nomeF: 'Vampira', cor: '#ff4d6d', vida: 115, vel: 360,
     desc: 'Florete rápido que suga vida a cada golpe. Habilidade: Revoada (vira morcegos e atravessa os inimigos).',
     hab: 'Revoada', habCd: 4, rouba: 0.12,
     ataques: [
@@ -34,7 +34,7 @@ export const CLASSES = {
     ],
   },
   lobisomem: {
-    nome: 'Lobisomem', nomeF: 'Loba', cor: '#ffb04d', vida: 145, vel: 255,
+    nome: 'Lobisomem', nomeF: 'Loba', cor: '#ffb04d', vida: 145, vel: 350,
     desc: 'Garras largas e selvagens. Habilidade: Fúria Lunar (uiva, empurra todos e fica mais forte e rápido).',
     hab: 'Fúria', habCd: 11,
     ataques: [
@@ -44,7 +44,7 @@ export const CLASSES = {
     ],
   },
   monge: {
-    nome: 'Monge', nomeF: 'Monja', cor: '#ffd23f', vida: 125, vel: 255, puloDuplo: true,
+    nome: 'Monge', nomeF: 'Monja', cor: '#ffd23f', vida: 125, vel: 350, puloDuplo: true,
     desc: 'Socos rapidíssimos e pulo duplo. Habilidade: Chute do Dragão (voadora que atravessa a tela).',
     hab: 'Voadora', habCd: 4,
     ataques: [
@@ -55,7 +55,7 @@ export const CLASSES = {
     ],
   },
   padre: {
-    nome: 'Padre', nomeF: 'Sacerdotisa', cor: '#fff3b0', vida: 125, vel: 230,
+    nome: 'Padre', nomeF: 'Sacerdotisa', cor: '#fff3b0', vida: 125, vel: 320,
     desc: 'Maça sagrada e cura em grupo. Habilidade: Luz Sagrada (cura você e os amigos perto e queima os monstros).',
     hab: 'Luz', habCd: 9,
     ataques: [
