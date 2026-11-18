@@ -1,22 +1,42 @@
 // Gera as fases (sempre a mesma fase para a mesma semente, então todo mundo vê igual).
 // Blocos: 0 vazio, 1 pedra, 2 plataforma (dá pra subir por baixo), 3 espinhos de cristal
-import { T, rng } from './util.js';
+import { T, rng, hash } from './util.js';
 
 export const BIOMAS = [
-  { nome: 'Catacumbas Prismáticas', ceu: ['#07051a', '#1d1150', '#4a2381'], cristal: ['#c79bff', '#7c4dff', '#3b1d8f'], pedra: ['#2b2547', '#1a1630', '#3d3563'], topo: '#8f7bd8', luz: '#b48cff', bruma: 'rgba(120,80,220,.18)' },
-  { nome: 'Jardins de Quartzo', ceu: ['#03121a', '#0b3442', '#1f6a6e'], cristal: ['#9fffe9', '#2fd6c0', '#106a6a'], pedra: ['#1f3338', '#12221f', '#2d4a4c'], topo: '#6fe0b5', luz: '#7dffd8', bruma: 'rgba(60,200,180,.16)' },
-  { nome: 'Cidadela Celeste', ceu: ['#0a0c24', '#25306b', '#7a6bb8'], cristal: ['#fff2b8', '#ffc94d', '#b5751c'], pedra: ['#3a3550', '#24203a', '#575073'], topo: '#e8d08a', luz: '#ffe28a', bruma: 'rgba(255,210,120,.13)' },
-  { nome: 'Trono do Prisma', ceu: ['#12030f', '#3d0b3a', '#8a1f6a'], cristal: ['#ffb3ec', '#ff4fc8', '#8a1270'], pedra: ['#2e1a33', '#1b0f20', '#46284d'], topo: '#ff8fd6', luz: '#ff7ad9', bruma: 'rgba(255,80,200,.15)' },
+  { tema: 'cristal', nome: 'Catacumbas Prismáticas', ceu: ['#07051a', '#1d1150', '#4a2381'], cristal: ['#c79bff', '#7c4dff', '#3b1d8f'], pedra: ['#2b2547', '#1a1630', '#3d3563'], topo: '#8f7bd8', luz: '#b48cff', bruma: 'rgba(120,80,220,.18)' },
+  { tema: 'cristal', nome: 'Jardins de Quartzo', ceu: ['#03121a', '#0b3442', '#1f6a6e'], cristal: ['#9fffe9', '#2fd6c0', '#106a6a'], pedra: ['#1f3338', '#12221f', '#2d4a4c'], topo: '#6fe0b5', luz: '#7dffd8', bruma: 'rgba(60,200,180,.16)' },
+  { tema: 'cristal', nome: 'Cidadela Celeste', ceu: ['#0a0c24', '#25306b', '#7a6bb8'], cristal: ['#fff2b8', '#ffc94d', '#b5751c'], pedra: ['#3a3550', '#24203a', '#575073'], topo: '#e8d08a', luz: '#ffe28a', bruma: 'rgba(255,210,120,.13)' },
+  { tema: 'cristal', nome: 'Trono do Prisma', ceu: ['#12030f', '#3d0b3a', '#8a1f6a'], cristal: ['#ffb3ec', '#ff4fc8', '#8a1270'], pedra: ['#2e1a33', '#1b0f20', '#46284d'], topo: '#ff8fd6', luz: '#ff7ad9', bruma: 'rgba(255,80,200,.15)' },
+];
+// fases temáticas (sorteadas a cada andar)
+export const TEMAS = [
+  { tema: 'gotico', nome: 'Castelo Carmesim', ceu: ['#0a0208', '#2a0614', '#5a0f22'], cristal: ['#ff9aa8', '#d6233f', '#5a0a18'], pedra: ['#2a2228', '#16101a', '#3a3038'], topo: '#8a3a4a', luz: '#ff5a6a', bruma: 'rgba(200,30,60,.15)' },
+  { tema: 'londres', nome: 'Londres Enevoada', ceu: ['#05100f', '#163330', '#3f6158'], cristal: ['#ffe2a0', '#e8a93a', '#7a5418'], pedra: ['#3a2e2c', '#1e1817', '#4e403b'], topo: '#7aa69a', luz: '#ffcf7a', bruma: 'rgba(170,200,190,.22)' },
+  { tema: 'egito', nome: 'Tumba de Anúbis', ceu: ['#070a22', '#1f2a5a', '#c77a3a'], cristal: ['#9ff5ea', '#2fa8a0', '#11524d'], pedra: ['#8a6a44', '#4a3820', '#a8865a'], topo: '#e8c27a', luz: '#ffd27a', bruma: 'rgba(230,180,110,.15)' },
 ];
 export const ANDARES_POR_CICLO = 4;      // 3 fases + chefe
 export const ehChefe = andar => andar % ANDARES_POR_CICLO === 0;
-export const biomaDo = andar => BIOMAS[(andar - 1) % ANDARES_POR_CICLO];
+const SORTEIO = [[BIOMAS[0], 1], [BIOMAS[1], 1], [BIOMAS[2], 1], [TEMAS[0], 2], [TEMAS[1], 2], [TEMAS[2], 2]];
+export function biomaDo(andar, semente = 1) {
+  if (ehChefe(andar)) return BIOMAS[3];
+  const tot = SORTEIO.reduce((a, b) => a + b[1], 0);
+  let v = hash(semente * 7 + andar * 131) * tot;
+  for (const [b, p] of SORTEIO) if ((v -= p) < 0) return b;
+  return BIOMAS[0];
+}
 
-const TIPOS_POR_ANDAR = {
-  1: [['esqueleto', 5], ['morcego', 3], ['conjurador', 1]],
-  2: [['esqueleto', 4], ['morcego', 3], ['conjurador', 2], ['golem', 2]],
-  3: [['esqueleto', 3], ['morcego', 3], ['conjurador', 3], ['golem', 3]],
+// monstros de cada tema (tipo, peso); os pesados aparecem menos no primeiro andar do ciclo
+const TIPOS_TEMA = {
+  cristal: [['esqueleto', 4], ['morcego', 3], ['conjurador', 2], ['golem', 2]],
+  gotico: [['esqueleto', 3], ['morcego', 3], ['gargula', 3], ['cavaleiroSombrio', 3], ['conjurador', 1]],
+  londres: [['assassino', 3], ['automato', 2], ['esqueleto', 2], ['morcego', 2], ['conjurador', 2]],
+  egito: [['mumia', 3], ['escaravelho', 3], ['conjurador', 2], ['esqueleto', 1], ['golem', 1]],
 };
+const PESADOS = ['golem', 'automato', 'cavaleiroSombrio'];
+export function tiposDoTema(tema, andar) {
+  const nivel = ((andar - 1) % ANDARES_POR_CICLO) + 1;
+  return (TIPOS_TEMA[tema] || TIPOS_TEMA.cristal).map(([t, p]) => [t, PESADOS.includes(t) && nivel === 1 ? p * 0.5 : p]);
+}
 
 // gera e confere se dá pra chegar no fim; se não der, tenta outra variação (sempre igual pra todos)
 export function gerarNivel(semente, andar) {
@@ -64,8 +84,11 @@ function gerarNivelBruto(semente, andar) {
   const set = (x, y, v) => { if (x >= 0 && x < W && y >= 0 && y < H) tiles[y * W + x] = v; };
   const spawns = [], enfeites = [], arenas = [];
   let nid = 1;
-  const inimigo = (tipo, x, y) => spawns.push({ id: nid++, tipo, x: x * T + T / 2, y: y * T });
-  const pesos = TIPOS_POR_ANDAR[((andar - 1) % ANDARES_POR_CICLO) + 1] || TIPOS_POR_ANDAR[3];
+  const inimigo = (tipo, x, y) => {
+    if (tipo === 'escaravelho') { for (let k = -1; k <= 1; k++) spawns.push({ id: nid++, tipo, x: x * T + T / 2 + k * 30, y: y * T }); return; }
+    spawns.push({ id: nid++, tipo, x: x * T + T / 2, y: y * T });
+  };
+  const pesos = tiposDoTema(biomaDo(andar, semente).tema, andar);
   const sortearTipo = () => {
     let tot = pesos.reduce((s, p) => s + p[1], 0), v = r() * tot;
     for (const [t, p] of pesos) { if ((v -= p) < 0) return t; }
@@ -89,6 +112,7 @@ function gerarNivelBruto(semente, andar) {
       if (tipo === 'plano') {
         const n = r.int(6, 11), x0 = x; ir(n, g);
         if (r.chance(0.75)) inimigo(sortearTipo(), x0 + r.int(2, n - 2), g - 1);
+        if (n >= 8 && r.chance(0.35)) inimigo(sortearTipo(), x0 + n - 2, g - 1);
         if (r.chance(0.45)) { const px = x0 + r.int(1, Math.max(1, n - 5)); plataforma(px, px + r.int(2, 4), g - 3); if (r.chance(0.5)) inimigo('morcego', px + 1, g - 6); }
       } else if (tipo === 'degrau') {
         g = Math.max(9, Math.min(H - 4, g + r.pick([-2, -1, 1, 2])));
@@ -170,7 +194,7 @@ function gerarNivelBruto(semente, andar) {
   const gf = chao[W - 6];
   return {
     w: W, h: H, tiles, chao, spawns, enfeites, arenas, chefe, andar,
-    bioma: biomaDo(andar),
+    bioma: biomaDo(andar, semente),
     inicio: { x: 3 * T, y: gi * T },
     portal: chefe ? null : { x: (W - 6) * T, y: gf * T },
     semente,

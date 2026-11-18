@@ -1,5 +1,6 @@
 // Cenário: fundo em camadas, blocos, enfeites e o portal. Tudo desenhado por código (vetor, sem pixel art).
 import { T, rng, tela, hash } from './util.js';
+import { camadasTema, padraoBlocos, espinhosTema, enfeiteTema } from './cenarios.js';
 
 // ---------- cristal genérico ----------
 export function cristal(c, x, y, h, w, cores, ang = 0, brilho = 1) {
@@ -58,7 +59,8 @@ export function criarFundo(bioma, larg, alt, semente) {
   c0.drawImage(brilho(rgba(bioma.luz, 0.45), 128), lx - lr * 4, ly - lr * 4, lr * 8, lr * 8);
   c0.globalCompositeOperation = 'source-over';
   const gl = c0.createRadialGradient(lx - lr * 0.35, ly - lr * 0.35, lr * 0.1, lx, ly, lr);
-  gl.addColorStop(0, '#ffffff'); gl.addColorStop(0.7, mistura('#ffffff', bioma.cristal[0], 0.4)); gl.addColorStop(1, bioma.cristal[0]);
+  const corLua = bioma.tema && bioma.tema !== 'cristal' && bioma.tema !== 'gotico' ? mistura('#ffffff', bioma.luz, 0.35) : bioma.cristal[0];
+  gl.addColorStop(0, '#ffffff'); gl.addColorStop(0.7, mistura('#ffffff', corLua, 0.4)); gl.addColorStop(1, corLua);
   c0.fillStyle = gl; c0.beginPath(); c0.arc(lx, ly, lr, 0, 7); c0.fill();
   // nuvens: bolinhas sobrepostas com topo iluminado
   const nuvem = (cx, cy, w, h, cor, a) => {
@@ -71,9 +73,12 @@ export function criarFundo(bioma, larg, alt, semente) {
     }
     c0.restore();
   };
-  for (let i = 0; i < 6; i++) nuvem(r() * larg, alt * (0.25 + r() * 0.35), larg * (0.15 + r() * 0.2), alt * (0.06 + r() * 0.06), mistura(ceuMeio, bioma.luz, 0.35), 0.35 + r() * 0.25);
+  if (bioma.tema !== 'londres') for (let i = 0; i < 6; i++) nuvem(r() * larg, alt * (0.25 + r() * 0.35), larg * (0.15 + r() * 0.2), alt * (0.06 + r() * 0.06), mistura(ceuMeio, bioma.luz, 0.35), 0.35 + r() * 0.25);
   camadas.push({ cv: ceu, par: 0, fixo: true });
 
+  const temaEspecial = bioma.tema && bioma.tema !== 'cristal';
+  if (temaEspecial) camadas.push(...camadasTema(bioma.tema, bioma, L, alt, r, { mistura, rgba, brilho }));
+  else {
   // camada distante: penhascos e castelo, bem enevoados
   const m = tela(L, alt), c1 = m.getContext('2d');
   const perfil = (base, amp, passo, cor, ctx = c1) => {
@@ -138,6 +143,7 @@ export function criarFundo(bioma, larg, alt, semente) {
   }
   c3.fillStyle = escuro; c3.fillRect(0, 0, L, alt * 0.05);
   camadas.push({ cv: a, par: 0.45, L, alpha: 0.55 });
+  }
 
   // raios de luz diagonais (desenhados por cima de tudo, bem sutis)
   const raios = tela(larg, alt), c4 = raios.getContext('2d');
@@ -215,6 +221,7 @@ export function criarBlocos(bioma, s) {
       for (let k = 0; k < 4; k++) { x += (r() - 0.5) * 40; y += r() * 26; c.lineTo(x, y); }
       c.stroke();
     }
+    if (bioma.tema && bioma.tema !== 'cristal') { padraoBlocos(c, bioma.tema, TT, bioma, { rgba, mistura }); return; }
     // veios de cristal brilhando
     c.save(); c.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 3; i++) {
@@ -264,6 +271,7 @@ export function criarBlocos(bioma, s) {
     c.fillStyle = 'rgba(255,255,255,.7)'; c.fillRect(0, 2.5, T, 1);
   });
   const espinhos = mk(c => {
+    if (espinhosTema(c, bioma.tema, T, bioma)) return;
     c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.5;
     c.drawImage(brilho('rgba(255,80,110,.6)', 32), -6, T - 30, T + 12, 34); c.restore();
     for (let i = 0; i < 4; i++) cristal(c, 6 + i * 12, T, 22 + ((i * 13) % 14), 10, bioma.cristal, (i % 2 ? 0.15 : -0.12));
@@ -273,6 +281,7 @@ export function criarBlocos(bioma, s) {
 
 // ---------- enfeites ----------
 export function desenharEnfeite(c, e, bioma, t) {
+  if (enfeiteTema(c, e, bioma, t, { brilho, rgba })) return;
   if (e.t === 'cristal') {
     const s = e.s;
     c.save(); c.globalCompositeOperation = 'lighter';

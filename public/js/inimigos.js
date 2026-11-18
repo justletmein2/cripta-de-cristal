@@ -3,8 +3,9 @@ import { T, clamp, sinal, toca } from './util.js';
 export { ARMADURA };
 import { moverCorpo, temChaoFrente, paredeFrente, solido } from './fisica.js';
 import { cristal, brilho, rgba } from './arte.js';
+import { DEFS2, ARMADURA2, atualizarInimigo2, caixaGolpe2, desenharInimigo2, desenharProjetil2 } from './inimigos2.js';
 
-export const TIPOS = ['esqueleto', 'golem', 'morcego', 'conjurador', 'chefe'];
+export const TIPOS = ['esqueleto', 'golem', 'morcego', 'conjurador', 'chefe', 'gargula', 'cavaleiroSombrio', 'automato', 'assassino', 'mumia', 'escaravelho'];
 export const ESTADOS = ['ronda', 'persegue', 'prepara', 'golpe', 'recupera', 'atordoado', 'morto'];
 
 export const DEFS = {
@@ -13,10 +14,11 @@ export const DEFS = {
   morcego: { vida: 32, vel: 160, w: 36, h: 26, dano: 12, alcance: 250, prep: 0.45, golpe: 0.5, recup: 0.6, visao: 520, voa: true, cristais: 3, nome: 'Morcego Espectral' },
   conjurador: { vida: 48, vel: 70, w: 30, h: 72, dano: 14, alcance: 520, prep: 0.75, golpe: 0.1, recup: 1.3, visao: 640, cristais: 6, nome: 'Conjurador' },
   chefe: { vida: 1500, vel: 120, w: 96, h: 150, dano: 26, alcance: 2000, prep: 0.8, golpe: 0.6, recup: 0.9, visao: 5000, pesado: true, voa: true, cristais: 120, nome: 'Guardião do Prisma' },
+  ...DEFS2,
 };
 
 // armadura: enquanto tiver, o monstro não se abala com os golpes; quando quebra, fica tonto e leva +50% de dano
-const ARMADURA = { golem: 70, chefe: 260 };
+const ARMADURA = { golem: 70, chefe: 260, ...ARMADURA2 };
 export function criarInimigo(sp, mult, elite = false) {
   const d = DEFS[sp.tipo];
   const ve = elite ? 2.2 : 1;
@@ -98,6 +100,7 @@ export function atualizarInimigo(en, dt, mundo) {
   }
 
   if (en.tipo === 'chefe') { atualizarChefe(en, dt, mundo, alvo, dx); return; }
+  if (atualizarInimigo2(en, dt, mundo, alvo, dist, d)) return;
 
   // andarilhos: esqueleto, golem, conjurador
   if (en.estado === 'ronda') {
@@ -239,6 +242,7 @@ export function caixaGolpe(en) {
   if (en.tipo === 'golem') return { x: en.d > 0 ? en.x - 10 : en.x - 120, y: en.y - 60, w: 130, h: 60 };
   if (en.tipo === 'morcego') return { x: en.x - 18, y: en.y - 26, w: 36, h: 26 };
   if (en.tipo === 'chefe' && en.ataque === 'investida') return { x: en.x - 50, y: en.y - 140, w: 100, h: 140 };
+  if (DEFS2[en.tipo]) return caixaGolpe2(en);
   return null;
 }
 export function danoGolpe(en) {
@@ -380,6 +384,8 @@ export function desenharInimigo(c, en, t, bioma) {
     cristal(c, ox, oy + 6, 14, 7, bioma.cristal, 0);
   } else if (en.tipo === 'chefe') {
     desenharChefe(c, en, t, bioma, f);
+  } else if (DEFS2[en.tipo]) {
+    desenharInimigo2(c, en, t, bioma, f);
   }
   c.restore();
   // barra de vida
@@ -435,6 +441,7 @@ function desenharChefe(c, en, t, bioma, f) {
 }
 
 export function desenharProjetil(c, p, bioma, t) {
+  if (desenharProjetil2(c, p, t)) return;
   c.save(); c.translate(p.x, p.y);
   c.globalCompositeOperation = 'lighter';
   const r = p.tipo === 1 ? 26 : 20;

@@ -1,6 +1,6 @@
 // Cripta de Cristal — laço principal, combate, telas e multiplayer.
 import { T, clamp, lerp, sinal, rng, hash, toca } from './util.js';
-import { gerarNivel, bloco, biomaDo, ehChefe, BIOMAS, ANDARES_POR_CICLO } from './nivel.js';
+import { gerarNivel, bloco, biomaDo, ehChefe, BIOMAS, ANDARES_POR_CICLO, tiposDoTema } from './nivel.js';
 import { criarFundo, desenharFundo, desenharAtmosfera, criarBlocos, desenharEnfeite, desenharPortal, varianteBloco, brilho, rgba, cristal } from './arte.js';
 const brilhoArte = brilho;
 import { CLASSES, ORDEM, nomeClasse, calcularPose, desenharHeroi } from './herois.js';
@@ -118,7 +118,7 @@ function popularAndar(nv, andar, semente, nJog) {
     for (let k = 1; k < nJog; k++) if (r() < 0.5) {
       const id = ++P.nextId, dx = (r() < 0.5 ? -1 : 1) * 60;
       const x = solido(nv, sp.x + dx, sp.y + 4) || sp.tipo === 'morcego' ? sp.x + dx : sp.x;
-      P.ini.set(id, criarInimigo({ id, tipo: sp.tipo === 'golem' ? 'esqueleto' : sp.tipo, x, y: sp.y }, P.mult, r() < pElite * 0.5));
+      P.ini.set(id, criarInimigo({ id, tipo: DEFS[sp.tipo].pesado ? 'esqueleto' : sp.tipo, x, y: sp.y }, P.mult, r() < pElite * 0.5));
     }
   }
 }
@@ -128,11 +128,12 @@ function checarEmboscadas(jogs) {
     if (a.foi || !jogs.some(j => j.vivo && j.x > a.x0 + T * 3 && j.x < a.x1 - T * 3 && Math.abs(j.y - a.y) < T * 3)) continue;
     a.foi = true;
     const n = 2 + jogs.length - 1 + (P.andar >= 3 ? 1 : 0) + (P.ciclo > 1 ? 1 : 0);
-    const tipos = ['esqueleto', 'esqueleto', 'morcego', 'conjurador', P.andar >= 2 ? 'golem' : 'esqueleto'];
+    const tipos = tiposDoTema(P.bioma.tema, P.andar).flatMap(([t, p]) => Array(Math.max(1, Math.round(p))).fill(t));
     for (let i = 0; i < n; i++) {
       const id = ++P.nextId, tipo = tipos[Math.floor(Math.random() * tipos.length)];
       const x = a.x0 + T * 2 + (a.x1 - a.x0 - T * 4) * ((i + 0.5) / n);
-      const en = criarInimigo({ id, tipo, x, y: tipo === 'morcego' ? a.y - T * 3 : a.y }, P.mult, Math.random() < 0.12);
+      const voa = tipo === 'morcego' || tipo === 'gargula';
+      const en = criarInimigo({ id, tipo, x, y: voa ? a.y - T * 3 : a.y }, P.mult, Math.random() < 0.12);
       en.estado = 'persegue';
       P.ini.set(id, en);
       P.fx.push({ tipo: 'runa', x, y: en.y - 50, t: 0, dur: 0.6 });
@@ -327,6 +328,11 @@ function golpear(en, base, kb, forte, x, y, lanca = false, deEco = false) {
   if (!h.noChao && h.atk && !h.atk.tiro && h.arHits < 6) { h.arHits++; h.vy = Math.min(h.vy, -170); }
   const crit = h.critT > 0 || Math.random() < h.mods.crit;
   if (crit) dano *= 2;
+  // escudo: o cavaleiro sombrio defende golpes fracos que vêm pela frente
+  const def = DEFS[en.tipo];
+  if (def.escudo && en.estado !== 'golpe' && en.estado !== 'atordoado' && sinal((x ?? h.x) - en.x) === en.d && !forte && !lanca && !(en.arm <= 0 && en.marm > 0)) {
+    dano *= 0.15; numero(en.x, en.y - en.h - 20, 'DEFENDEU', '#9fb0cc', false); som.defendeu();
+  }
   dano = Math.max(1, Math.round(dano * (0.92 + Math.random() * 0.16)));
   const kx = h.d * kb;
   numero(x ?? en.x, (y ?? en.y - en.h) - 6, dano, crit ? '#ffe28a' : '#fff', crit);
@@ -359,13 +365,13 @@ function matarInimigo(en) {
   P.tremor = Math.max(P.tremor, en.tipo === 'chefe' ? 22 : 6);
   P.eu.mortos++;
   esp.aoMatar(en);
-  if (en.elite || en.tipo === 'golem' || en.tipo === 'chefe') esp.impacto(cx, cy, 2);
+  if (en.elite || DEFS[en.tipo].pesado) esp.impacto(cx, cy, 2);
   // tesouro (cada jogador ganha o seu)
   const valor = Math.round(d.cristais * (1 + 0.2 * (P.andar - 1)));
   const n = Math.min(8, valor);
   for (let i = 0; i < n; i++) P.loot.push({ x: cx, y: cy, vx: (Math.random() - 0.5) * 300, vy: -200 - Math.random() * 300, t: 0, tipo: 'c', v: Math.ceil(valor / n) });
   const sorte = hash(en.id * 31 + P.andar * 1009 + P.semente % 1000);
-  if (sorte < (en.tipo === 'golem' ? 0.35 : en.tipo === 'chefe' ? 1 : 0.09)) P.loot.push({ x: cx, y: cy, vx: 0, vy: -380, t: 0, tipo: 'p' });
+  if (sorte < (['golem', 'automato'].includes(en.tipo) ? 0.35 : en.tipo === 'chefe' ? 1 : en.tipo === 'escaravelho' ? 0.03 : 0.09)) P.loot.push({ x: cx, y: cy, vx: 0, vy: -380, t: 0, tipo: 'p' });
   if (en.tipo === 'chefe') {
     P.chefeMorto = true;
     aviso('O Guardião caiu!', 'o Trono do Prisma é seu', 3500);
@@ -626,7 +632,12 @@ function atualizarEu(dt) {
   for (const en of P.ini.values()) {
     const cx = caixaGolpe(en);
     if (!cx || h.golpesVistos.get(en.id) === en.ac) continue;
-    if (toca(cx, meuCorpo)) { h.golpesVistos.set(en.id, en.ac); ferirHeroi(danoGolpe(en), sinal(h.x - en.x)); }
+    if (toca(cx, meuCorpo)) {
+      h.golpesVistos.set(en.id, en.ac);
+      const puxa = DEFS[en.tipo].puxa;
+      ferirHeroi(danoGolpe(en), puxa ? sinal(en.x - h.x) : sinal(h.x - en.x));
+      if (puxa && !h.caido && h.rolarT <= 0) { h.vx = sinal(en.x - h.x) * 520; h.vy = -160; }
+    }
   }
   for (const z of P.zonas) {
     const idade = P.t - z.criado;
@@ -808,7 +819,10 @@ function simularHost(dt) {
     nv: P.nv, jogs, proj: P.proj, zonas: P.zonas,
     novoId: () => ++P.nextId,
     invocar: (tipo, x, y) => { const id = ++P.nextId; P.ini.set(id, criarInimigo({ id, tipo, x, y }, P.mult)); P.fx.push({ tipo: 'runa', x, y: y - 50, t: 0, dur: 0.6 }); },
-    fx: (tipo, x, y) => { if (tipo === 'tremor') { P.tremor = 14; som.tremor(); } },
+    fx: (tipo, x, y) => {
+      if (tipo === 'tremor') { P.tremor = Math.max(P.tremor, 10); som.tremor(); }
+      if (tipo === 'piscar') for (let i = 0; i < 14; i++) { const a = Math.random() * 7; P.parts.push({ x, y: y + (Math.random() - 0.5) * 50, vx: Math.cos(a) * 80, vy: Math.sin(a) * 80 - 30, vida: 0.5, max: 0.5, cor: 'rgba(180,190,200,.5)', tam: 8 + Math.random() * 8, grav: 0 }); }
+    },
   };
   for (const z of P.zonas) if (z.criado === undefined) z.criado = P.t;
   checarEmboscadas(jogs);

@@ -131,6 +131,7 @@ export const som = {
     if (cl === 'mago' || cl === 'padre') [0, 4, 7, 11, 14].forEach((s, i) => sino(880 * Math.pow(2, s / 12), 1.6, 0.06, i * 0.07));
     else for (let i = 0; i < 4; i++) ruido(0.2, { vol: 0.3, de: 4000, ate: 600, q: 1.2, atraso: 0.3 + i * 0.1, ataque: 0.02 });
   },
+  defendeu: () => { tom(var_(1800), 0.18, { tipo: 'square', vol: 0.06, ate: 1500, rev: 0.4 }); ruido(0.06, { vol: 0.25, de: 5000, ate: 3000, q: 2 }); },
   raio: () => { ruido(0.18, { vol: 0.3, de: 8000, ate: 2000, q: 0.5, rev: 0.3 }); tom(var_(1200), 0.12, { tipo: 'square', vol: 0.04, ate: 300 }); },
   cura: () => [523, 659, 784, 1046].forEach((f, i) => sino(f, 1.0, 0.07, i * 0.08)),
   portal: () => [392, 523, 659, 784, 1046].forEach((f, i) => sino(f, 1.4, 0.07, i * 0.07)),
