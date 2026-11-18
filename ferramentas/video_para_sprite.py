@@ -10,7 +10,7 @@ from scipy import ndimage
 HEROI, A, B, SAIDA = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 ESC = 0.38          # 720p do vídeo -> folha
 K = 1 / 1.4         # a folha tem 1.4x a resolução da dos cavaleiros
-FUNDO = 2 if sys.argv[1] == 'vampiro_f' else 5
+FUNDO = 2 if sys.argv[1].startswith('vampiro') else 5
 
 # animação: (pasta, quadros, espelhar?, ancora)  ancora: 'tronco' = alinha cada quadro pelo tronco; 'fixa' = alinha pelo 1º quadro
 TRECHOS = {}
@@ -39,9 +39,18 @@ TRECHOS['vampiro_f'] = {
     'atk2':   (A, list(range(97, 126, 2)), True, 'fixa'),      # giro com a perna (golpe final)
     'morrer': (A, list(range(125, 141, 3)), True, 'fixa'),
 }
+# Vampiro: vídeo do Flow com sabre e kunais, apagados antes com tirar_lamina.py (pasta "limpa").
+# Corre e lança virado pra direita; pulo virado pra esquerda; sem pose parada (usa o fim do pouso).
+TRECHOS['vampiro_m'] = {
+    'parado': (A, list(range(183, 191)), True, 'fixa'),
+    'correr': (A, list(range(20, 37)), False, 'tronco'),        # ciclo de 17 quadros (20 = 37)
+    'pular':  (A, list(range(137, 186, 3)), True, 'tronco'),
+    'atk1':   (A, [63, 66, 69] + list(range(105, 126, 2)), False, 'fixa'),   # recolhe e estica o braço (pula os quadros com o leque de kunais)
+    'morrer': (A, list(range(129, 138, 2)), True, 'fixa'),
+}
 ANIMS = TRECHOS[HEROI]
 # roupa escura em fundo preto puro: corte bem mais baixo
-LIM = (4, 8, 7) if HEROI == 'vampiro_f' else (14, 26, 24)   # início do suave, largura, sólido
+LIM = (4, 8, 7) if HEROI.startswith('vampiro') else (14, 26, 24)   # início do suave, largura, sólido
 LIMPAR_VERMELHO = HEROI == 'mago_m'   # o vídeo 1 do Mago saiu com manchas vermelhas no rosto
 
 def recortar(pasta, i, esp):
@@ -72,6 +81,21 @@ def recortar(pasta, i, esp):
     cor = np.clip((rgb - FUNDO * (1 - a)) / a, 0, 255)
     return np.dstack([cor, alfa * 255]).astype(np.uint8), solido
 
+def limpar_vampiro(im, m, nome):
+    # tira pedaços soltos (kunais voando) e, no golpe, as kunais finas na mão (abertura morfológica na frente do corpo)
+    a = im[..., 3] > 20
+    if nome == 'atk1':
+        tx = int(tronco_x(m))
+        frente = np.zeros_like(a); frente[:, tx + 90:] = True
+        fino = a & ~ndimage.binary_opening(a, iterations=5)
+        a &= ~(fino & frente)
+    lab, n = ndimage.label(a)
+    if n > 1:
+        tam = ndimage.sum(a, lab, range(1, n + 1))
+        a = np.isin(lab, [k + 1 for k, t in enumerate(tam) if t > tam.max() * 0.04])
+    im = im.copy(); im[..., 3] = np.where(a, im[..., 3], 0)
+    return im, m & a
+
 def tronco_x(m):
     ys, xs = np.nonzero(m)
     y0, y1 = ys.min(), ys.max(); h = y1 - y0
@@ -84,6 +108,7 @@ for nome, (pasta, quadros, esp, anc) in ANIMS.items():
     imgs, ancoras = [], []
     for i in quadros:
         im, m = recortar(pasta, i, esp)
+        if HEROI == 'vampiro_m': im, m = limpar_vampiro(im, m, nome)
         ys, xs = np.nonzero(m)
         ancoras.append((tronco_x(m), ys.max()))
         imgs.append(im)

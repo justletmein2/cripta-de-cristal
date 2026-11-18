@@ -16,6 +16,8 @@ const DEFS = {
   cavaleiro_f: { pulo: [3, 4, 5, 6, 7, 8, 9], golpe: { atk1: 10 }, ritmo: 0.62,
     combo: [['atk1', 6, 10, 11], ['atk1', 11, 8, 7], ['atk1', 7, 10, 16]] },   // desce, sobe (golpe de volta), desce forte
   // Vampira (vídeo do Flow): garras pra frente, garras pra cima, giro com a perna
+  // Vampiro (vídeo do Flow, sem o sabre e as kunais): estica o braço pra lançar o sangue
+  vampiro_m: { ponta: [72, -86], pulo: [0, 2, 4, 6, 8, 10, 12, 14, 16], golpe: { atk1: 4 }, combo: [['atk1', 0, 3, 7], ['atk1', 1, 4, 9], ['atk1', 0, 3, 13]], semFerido: true, vaivem: true },
   vampiro_f: { ponta: [58, -80], pulo: [0, 1, 2, 3, 4, 5, 6], golpe: { atk1: 6 }, combo: [['atk1', 1, 5, 8], ['atk1', 8, 17, 18], ['atk2', 0, 4, 14]], semFerido: true, vaivem: true },
 };
 

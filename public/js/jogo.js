@@ -11,7 +11,7 @@ import { som, iniciarSom, musica, alternarSom } from './som.js';
 import * as rede from './rede.js';
 import { carregarSprites, pontaArma } from './sprites.js';
 import * as esp from './espetaculo.js';
-carregarSprites(['cavaleiro_m', 'cavaleiro_f', 'mago_f', 'mago_m', 'vampiro_f']);
+carregarSprites(['cavaleiro_m', 'cavaleiro_f', 'mago_f', 'mago_m', 'vampiro_f', 'vampiro_m']);
 
 const $ = s => document.querySelector(s);
 const cv = $('#tela'), ctx = cv.getContext('2d');

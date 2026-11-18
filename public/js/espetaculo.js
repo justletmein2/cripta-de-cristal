@@ -17,7 +17,7 @@ export function retratoDe(classe, sexo, escolha = false) {
   const n = `${classe}_${sexo === 'f' ? 'f' : 'm'}`;
   return (escolha && pronto(retratos['sel_' + n])) || pronto(retratos[n]);
 }
-for (const n of ['cavaleiro_f', 'cavaleiro_m', 'mago_f', 'mago_m', 'vampiro_f']) { const i = new Image(); i.src = `sprites/retrato_${n}.webp`; retratos[n] = i; }
+for (const n of ['cavaleiro_f', 'cavaleiro_m', 'mago_f', 'mago_m', 'vampiro_f', 'vampiro_m']) { const i = new Image(); i.src = `sprites/retrato_${n}.webp`; retratos[n] = i; }
 // retratos próprios da tela de escolha (quando diferentes do especial)
 for (const n of []) { const i = new Image(); i.src = `sprites/retrato_sel_${n}.webp`; retratos['sel_' + n] = i; }
 
