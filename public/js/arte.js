@@ -34,87 +34,123 @@ export function rgba(hex, a) {
   return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
 }
 
-// ---------- fundo em camadas ----------
+// ---------- fundo em camadas (estilo cenário de anime: pintado, suave, com névoa e luz) ----------
 export function criarFundo(bioma, larg, alt, semente) {
   const r = rng(semente + 7);
-  const L = Math.max(1200, Math.ceil(larg * 1.2));
+  const L = Math.max(1400, Math.ceil(larg * 1.3));
   const camadas = [];
-  // céu
+  const ceuMeio = bioma.ceu[1], horizonte = bioma.ceu[2];
+  const nevoa = (cor, a) => rgba(mistura(cor, horizonte, 0.5), a);
+
+  // céu com degradê, estrelas, lua e nuvens macias
   const ceu = tela(larg, alt), c0 = ceu.getContext('2d');
   const g = c0.createLinearGradient(0, 0, 0, alt);
-  g.addColorStop(0, bioma.ceu[0]); g.addColorStop(0.6, bioma.ceu[1]); g.addColorStop(1, bioma.ceu[2]);
+  g.addColorStop(0, bioma.ceu[0]); g.addColorStop(0.45, ceuMeio); g.addColorStop(0.85, horizonte); g.addColorStop(1, mistura(horizonte, '#ffffff', 0.15));
   c0.fillStyle = g; c0.fillRect(0, 0, larg, alt);
-  for (let i = 0; i < 140; i++) {
-    c0.globalAlpha = 0.25 + r() * 0.7; c0.fillStyle = '#fff';
-    const s = r() < 0.9 ? 1 : 2;
-    c0.fillRect(r() * larg, r() * alt * 0.7, s, s);
+  for (let i = 0; i < 160; i++) {
+    const y = r() * alt * 0.55;
+    c0.globalAlpha = (0.2 + r() * 0.8) * (1 - y / (alt * 0.6));
+    c0.fillStyle = '#fff'; const s = r() < 0.93 ? 1 : 2; c0.fillRect(r() * larg, y, s, s);
   }
   c0.globalAlpha = 1;
-  // lua grande
-  const lx = larg * 0.72, ly = alt * 0.2, lr = alt * 0.11;
+  const lx = larg * 0.74, ly = alt * 0.2, lr = alt * 0.1;
   c0.globalCompositeOperation = 'lighter';
-  c0.drawImage(brilho(rgba(bioma.luz, 0.5), 128), lx - lr * 3, ly - lr * 3, lr * 6, lr * 6);
+  c0.drawImage(brilho(rgba(bioma.luz, 0.45), 128), lx - lr * 4, ly - lr * 4, lr * 8, lr * 8);
   c0.globalCompositeOperation = 'source-over';
-  const gl = c0.createRadialGradient(lx - lr * 0.3, ly - lr * 0.3, lr * 0.1, lx, ly, lr);
-  gl.addColorStop(0, '#ffffff'); gl.addColorStop(1, bioma.cristal[0]);
+  const gl = c0.createRadialGradient(lx - lr * 0.35, ly - lr * 0.35, lr * 0.1, lx, ly, lr);
+  gl.addColorStop(0, '#ffffff'); gl.addColorStop(0.7, mistura('#ffffff', bioma.cristal[0], 0.4)); gl.addColorStop(1, bioma.cristal[0]);
   c0.fillStyle = gl; c0.beginPath(); c0.arc(lx, ly, lr, 0, 7); c0.fill();
-  c0.fillStyle = 'rgba(0,0,0,.08)';
-  for (let i = 0; i < 5; i++) { c0.beginPath(); c0.arc(lx + (r() - 0.5) * lr, ly + (r() - 0.5) * lr, lr * (0.1 + r() * 0.15), 0, 7); c0.fill(); }
+  // nuvens: bolinhas sobrepostas com topo iluminado
+  const nuvem = (cx, cy, w, h, cor, a) => {
+    c0.save(); c0.globalAlpha = a;
+    for (let i = 0; i < 9; i++) {
+      const bx = cx + (r() - 0.5) * w, by = cy + (r() - 0.3) * h * 0.5, br = h * (0.35 + r() * 0.4);
+      const gg = c0.createRadialGradient(bx, by - br * 0.4, br * 0.1, bx, by, br);
+      gg.addColorStop(0, mistura(cor, '#ffffff', 0.35)); gg.addColorStop(0.6, cor); gg.addColorStop(1, rgba(cor, 0));
+      c0.fillStyle = gg; c0.beginPath(); c0.arc(bx, by, br, 0, 7); c0.fill();
+    }
+    c0.restore();
+  };
+  for (let i = 0; i < 6; i++) nuvem(r() * larg, alt * (0.25 + r() * 0.35), larg * (0.15 + r() * 0.2), alt * (0.06 + r() * 0.06), mistura(ceuMeio, bioma.luz, 0.35), 0.35 + r() * 0.25);
   camadas.push({ cv: ceu, par: 0, fixo: true });
 
-  // montanhas e castelo distante
+  // camada distante: penhascos e castelo, bem enevoados
   const m = tela(L, alt), c1 = m.getContext('2d');
-  c1.fillStyle = bioma.ceu[1];
-  c1.globalAlpha = 0.9;
-  const perfil = (base, amp, passo, cor) => {
-    c1.fillStyle = cor; c1.beginPath(); c1.moveTo(0, alt);
-    const pts = [];
-    for (let x = 0; x <= L; x += passo) pts.push([x, base - r() * amp]);
-    pts[pts.length - 1][1] = pts[0][1];
-    pts.forEach(([x, y]) => c1.lineTo(x, y));
-    c1.lineTo(L, alt); c1.closePath(); c1.fill();
+  const perfil = (base, amp, passo, cor, ctx = c1) => {
+    ctx.fillStyle = cor; ctx.beginPath(); ctx.moveTo(0, alt);
+    let y = base - r() * amp; const y0 = y;
+    for (let x = 0; x <= L; x += passo) { y = x >= L - passo ? y0 : base - r() * amp; ctx.lineTo(x, y); }
+    ctx.lineTo(L, alt); ctx.closePath(); ctx.fill();
   };
-  perfil(alt * 0.62, alt * 0.22, 90, mistura(bioma.ceu[1], bioma.ceu[2], 0.5));
-  // castelo
-  const cx = L * (0.3 + r() * 0.4), cb = alt * 0.6;
-  c1.fillStyle = mistura(bioma.ceu[0], bioma.ceu[1], 0.6);
+  perfil(alt * 0.6, alt * 0.2, 110, mistura(ceuMeio, horizonte, 0.65));
+  const cx = L * (0.3 + r() * 0.4), cb = alt * 0.58;
+  const corCastelo = mistura(ceuMeio, horizonte, 0.45);
+  c1.fillStyle = corCastelo;
   for (let i = -3; i <= 3; i++) {
-    const tw = 18 + r() * 14, th = 80 + r() * 120 - Math.abs(i) * 18;
-    const tx = cx + i * 34;
+    const tw = 16 + r() * 14, th = 80 + r() * 120 - Math.abs(i) * 18, tx = cx + i * 34;
     c1.fillRect(tx - tw / 2, cb - th, tw, th + 40);
     c1.beginPath(); c1.moveTo(tx - tw / 2 - 5, cb - th); c1.lineTo(tx, cb - th - 40 - r() * 30); c1.lineTo(tx + tw / 2 + 5, cb - th); c1.fill();
   }
-  c1.fillStyle = rgba(bioma.luz, 0.8);
-  for (let i = 0; i < 14; i++) c1.fillRect(cx - 100 + r() * 200, cb - 20 - r() * 140, 3, 5);
-  perfil(alt * 0.78, alt * 0.16, 70, mistura(bioma.ceu[0], bioma.ceu[1], 0.7));
+  c1.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 16; i++) { const wx = cx - 100 + r() * 200, wy = cb - 20 - r() * 140; c1.drawImage(brilho(rgba(bioma.luz, 0.8), 16), wx - 6, wy - 6, 12, 12); }
+  c1.globalCompositeOperation = 'source-over';
+  // faixa de névoa sobre a base
+  let gn = c1.createLinearGradient(0, alt * 0.45, 0, alt * 0.8);
+  gn.addColorStop(0, nevoa(horizonte, 0)); gn.addColorStop(1, nevoa(horizonte, 0.75));
+  c1.fillStyle = gn; c1.fillRect(0, alt * 0.45, L, alt * 0.55);
+  perfil(alt * 0.76, alt * 0.12, 80, mistura(bioma.ceu[0], ceuMeio, 0.55));
   camadas.push({ cv: m, par: 0.08, L });
 
-  // grandes pilares de cristal
+  // pilares de cristal gigantes, translúcidos, com brilho por dentro
   const p = tela(L, alt), c2 = p.getContext('2d');
-  for (let i = 0; i < 9; i++) {
-    const x = (i + r() * 0.6) * L / 9, h = alt * (0.35 + r() * 0.5), w = 28 + r() * 50;
-    c2.globalAlpha = 0.35 + r() * 0.25;
-    for (const dx of [0, -L, L]) cristal(c2, x + dx, alt * 1.02, h, w, bioma.cristal, (r() - 0.5) * 0.25, 0.6);
+  for (let i = 0; i < 8; i++) {
+    const x = (i + r() * 0.6) * L / 8, h = alt * (0.4 + r() * 0.5), w = 34 + r() * 60;
+    c2.globalAlpha = 0.28 + r() * 0.2;
+    for (const dx of [0, -L, L]) cristal(c2, x + dx, alt * 1.02, h, w, bioma.cristal, (r() - 0.5) * 0.25, 0.8);
+    c2.globalAlpha = 0.25; c2.globalCompositeOperation = 'lighter';
+    for (const dx of [0, -L, L]) c2.drawImage(brilho(rgba(bioma.luz, 0.6), 64), x + dx - w, alt - h * 0.7, w * 2, h * 0.7);
+    c2.globalCompositeOperation = 'source-over';
   }
   c2.globalAlpha = 1;
+  gn = c2.createLinearGradient(0, alt * 0.55, 0, alt);
+  gn.addColorStop(0, nevoa(horizonte, 0)); gn.addColorStop(1, nevoa(horizonte, 0.55));
+  c2.fillStyle = gn; c2.fillRect(0, alt * 0.55, L, alt * 0.45);
   camadas.push({ cv: p, par: 0.2, L });
 
-  // arcos góticos escuros
+  // arcos góticos próximos, escuros mas com borda iluminada (luz de contorno)
   const a = tela(L, alt), c3 = a.getContext('2d');
-  c3.fillStyle = mistura(bioma.pedra[1], '#000000', 0.35);
-  const nA = 5;
+  const escuro = mistura(bioma.pedra[1], bioma.ceu[0], 0.5);
+  const nA = 4;
   for (let i = 0; i < nA; i++) {
     const x = i * L / nA, w = L / nA;
-    c3.fillRect(x, alt * 0.05, 30, alt);           // pilar
-    c3.beginPath();
-    c3.moveTo(x, alt * 0.05); c3.lineTo(x + w, alt * 0.05); c3.lineTo(x + w, alt * 0.18);
-    c3.quadraticCurveTo(x + w / 2 + 15, alt * 0.06, x + 30, alt * 0.18); c3.closePath(); c3.fill();
-    // janelinha com vitral
-    c3.save(); c3.globalAlpha = 0.25; c3.fillStyle = bioma.luz;
-    c3.beginPath(); c3.ellipse(x + w / 2 + 15, alt * 0.3, 16, 26, 0, 0, 7); c3.fill(); c3.restore();
+    const forma = () => {
+      c3.beginPath();
+      c3.rect(x, alt * 0.05, 34, alt);
+      c3.moveTo(x, alt * 0.05); c3.lineTo(x + w, alt * 0.05); c3.lineTo(x + w, alt * 0.2);
+      c3.quadraticCurveTo(x + w / 2 + 17, alt * 0.04, x + 34, alt * 0.2); c3.closePath();
+    };
+    c3.fillStyle = escuro; forma(); c3.fill();
+    c3.strokeStyle = rgba(bioma.luz, 0.35); c3.lineWidth = 2; c3.beginPath(); c3.moveTo(x + 34, alt * 0.2); c3.lineTo(x + 34, alt); c3.stroke();
+    c3.save(); c3.globalCompositeOperation = 'lighter'; c3.globalAlpha = 0.35;
+    c3.drawImage(brilho(rgba(bioma.luz, 0.9), 48), x + w / 2 - 20, alt * 0.22, 70, 90);
+    c3.fillStyle = rgba(bioma.cristal[0], 0.5); c3.beginPath(); c3.ellipse(x + w / 2 + 17, alt * 0.3, 13, 24, 0, 0, 7); c3.fill();
+    c3.restore();
   }
-  c3.fillRect(0, 0, L, alt * 0.05);
-  camadas.push({ cv: a, par: 0.45, L, alpha: 0.85 });
+  c3.fillStyle = escuro; c3.fillRect(0, 0, L, alt * 0.05);
+  camadas.push({ cv: a, par: 0.45, L, alpha: 0.55 });
+
+  // raios de luz diagonais (desenhados por cima de tudo, bem sutis)
+  const raios = tela(larg, alt), c4 = raios.getContext('2d');
+  c4.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 5; i++) {
+    const x0 = larg * (0.1 + i * 0.2 + r() * 0.1), w = 40 + r() * 90;
+    const gr = c4.createLinearGradient(x0, 0, x0 - alt * 0.5, alt);
+    gr.addColorStop(0, rgba(bioma.luz, 0.22)); gr.addColorStop(1, rgba(bioma.luz, 0));
+    c4.fillStyle = gr; c4.beginPath(); c4.moveTo(x0, 0); c4.lineTo(x0 + w, 0); c4.lineTo(x0 + w - alt * 0.55, alt); c4.lineTo(x0 - alt * 0.55, alt); c4.closePath(); c4.fill();
+  }
+  camadas.raios = raios;
+  // partículas desfocadas (bokeh) — posições fixas, desenhadas com paralaxe
+  camadas.bokeh = Array.from({ length: 34 }, () => ({ x: r(), y: r(), r: 3 + r() * 12, par: 0.3 + r() * 0.9, v: r() * 6, cor: r() < 0.5 ? bioma.luz : bioma.cristal[0] }));
   return camadas;
 }
 
@@ -128,6 +164,23 @@ export function desenharFundo(c, camadas, camX, camY, larg, alt, t) {
     c.globalAlpha = 1;
   }
 }
+// por cima do mundo: raios de luz e partículas brilhando
+export function desenharAtmosfera(c, camadas, camX, camY, larg, alt, t) {
+  if (!camadas.raios) return;
+  c.save(); c.globalCompositeOperation = 'lighter';
+  c.globalAlpha = 0.7 + 0.3 * Math.sin(t * 0.6);
+  c.drawImage(camadas.raios, -((camX * 0.05) % larg), 0, larg, alt);
+  c.drawImage(camadas.raios, larg - ((camX * 0.05) % larg), 0, larg, alt);
+  const esc = alt / 640;
+  for (const b of camadas.bokeh) {
+    const x = (((b.x * larg * 1.5 - camX * b.par * 0.6 + Math.sin(t * 0.3 + b.v) * 30) % (larg * 1.5)) + larg * 1.5) % (larg * 1.5) - larg * 0.25;
+    const y = (((b.y * alt - t * 8 * b.par * esc - camY * b.par * 0.3) % alt) + alt) % alt;
+    c.globalAlpha = 0.18 + 0.15 * Math.sin(t * 1.5 + b.v * 3);
+    const rr = b.r * esc * (0.6 + b.par * 0.6);
+    c.drawImage(brilho(rgba(b.cor, 0.9), 32), x - rr, y - rr, rr * 2, rr * 2);
+  }
+  c.restore();
+}
 
 export function mistura(a, b, t) {
   const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
@@ -138,56 +191,84 @@ export function mistura(a, b, t) {
 // ---------- blocos ----------
 export function criarBlocos(bioma, s) {
   const S = Math.ceil(T * s);
-  const mk = fn => { const cv = tela(S, S), c = cv.getContext('2d'); c.scale(S / T, S / T); fn(c); return cv; };
-  const pedra = [];
-  for (let v = 0; v < 4; v++) pedra.push(mk(c => {
-    const g = c.createLinearGradient(0, 0, 0, T);
-    g.addColorStop(0, bioma.pedra[2]); g.addColorStop(1, bioma.pedra[0]);
-    c.fillStyle = g; c.fillRect(0, 0, T, T);
-    c.strokeStyle = bioma.pedra[1]; c.lineWidth = 2;
-    // tijolos
-    const off = v % 2 ? T / 2 : 0;
-    c.beginPath(); c.moveTo(0, T / 2); c.lineTo(T, T / 2);
-    c.moveTo(off + T / 4, 0); c.lineTo(off + T / 4, T / 2); c.moveTo((off + T * 0.75) % T, T / 2); c.lineTo((off + T * 0.75) % T, T); c.stroke();
-    c.fillStyle = 'rgba(255,255,255,.05)'; c.fillRect(2, 2, T - 4, 3);
-    if (v === 3) { // veio de cristal
-      c.strokeStyle = bioma.cristal[1]; c.lineWidth = 2.5; c.globalAlpha = 0.8;
-      c.beginPath(); c.moveTo(6, 40); c.lineTo(18, 28); c.lineTo(24, 33); c.lineTo(40, 14); c.stroke();
+  const mk = (fn, w = 1, h = 1) => { const cv = tela(S * w, S * h), c = cv.getContext('2d'); c.scale(S / T, S / T); fn(c); return cv; };
+  const r = rng(91);
+  // textura de pedra contínua (4x4 blocos, emenda sem costura): manchas suaves, rachaduras finas e veios de cristal
+  const N = 4, TT = T * N;
+  const textura = mk(c => {
+    const g = c.createLinearGradient(0, 0, TT, TT);
+    g.addColorStop(0, bioma.pedra[2]); g.addColorStop(0.5, mistura(bioma.pedra[2], bioma.pedra[0], 0.5)); g.addColorStop(1, bioma.pedra[2]);
+    c.fillStyle = g; c.fillRect(0, 0, TT, TT);
+    const mancha = (x, y, rad, cor, a) => {
+      for (const dx of [-TT, 0, TT]) for (const dy of [-TT, 0, TT]) {
+        const gg = c.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, rad);
+        gg.addColorStop(0, rgba(cor, a)); gg.addColorStop(1, rgba(cor, 0));
+        c.fillStyle = gg; c.fillRect(x + dx - rad, y + dy - rad, rad * 2, rad * 2);
+      }
+    };
+    for (let i = 0; i < 14; i++) mancha(r() * TT, r() * TT, 30 + r() * 60, bioma.pedra[0], 0.35);
+    for (let i = 0; i < 8; i++) mancha(r() * TT, r() * TT, 20 + r() * 40, mistura(bioma.pedra[2], '#ffffff', 0.2), 0.25);
+    // rachaduras
+    c.strokeStyle = rgba(bioma.pedra[1], 0.3); c.lineWidth = 1.2;
+    for (let i = 0; i < 7; i++) {
+      let x = r() * TT, y = r() * TT; c.beginPath(); c.moveTo(x, y);
+      for (let k = 0; k < 4; k++) { x += (r() - 0.5) * 40; y += r() * 26; c.lineTo(x, y); }
+      c.stroke();
     }
-  }));
-  const fundoEscuro = mk(c => { c.fillStyle = mistura(bioma.pedra[1], '#000000', 0.25); c.fillRect(0, 0, T, T); });
+    // veios de cristal brilhando
+    c.save(); c.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 3; i++) {
+      let x = r() * TT, y = r() * TT;
+      c.strokeStyle = rgba(bioma.cristal[1], 0.6); c.lineWidth = 2.2; c.beginPath(); c.moveTo(x, y);
+      for (let k = 0; k < 3; k++) { x += (r() - 0.3) * 30; y -= r() * 20; c.lineTo(x, y); }
+      c.stroke();
+      c.drawImage(brilho(rgba(bioma.luz, 0.5), 32), x - 18, y - 18, 36, 36);
+    }
+    c.restore();
+  }, N, N);
+  const fundoEscuro = mk(c => {
+    const g = c.createLinearGradient(0, 0, 0, T);
+    const e = mistura(bioma.pedra[1], '#000000', 0.25);
+    g.addColorStop(0, e); g.addColorStop(1, mistura(e, bioma.pedra[0], 0.2));
+    c.fillStyle = g; c.fillRect(0, 0, T, T);
+  });
+  // borda de cima: luz de contorno + musgo de cristal com lâminas
   const topo = mk(c => {
-    const g = c.createLinearGradient(0, 0, 0, 14);
-    g.addColorStop(0, bioma.topo); g.addColorStop(1, 'rgba(0,0,0,0)');
-    c.fillStyle = g; c.fillRect(0, 0, T, 14);
+    const g = c.createLinearGradient(0, 0, 0, 18);
+    g.addColorStop(0, rgba(bioma.topo, 0.95)); g.addColorStop(0.35, rgba(bioma.topo, 0.55)); g.addColorStop(1, rgba(bioma.topo, 0));
+    c.fillStyle = g; c.fillRect(0, 0, T, 18);
+    c.fillStyle = mistura(bioma.topo, '#ffffff', 0.45); c.fillRect(0, 0, T, 2);
     c.fillStyle = bioma.topo;
-    c.beginPath(); c.moveTo(0, 0); c.lineTo(T, 0); c.lineTo(T, 4);
-    for (let x = T; x >= 0; x -= 6) c.lineTo(x, 4 + ((x * 7) % 5));
-    c.closePath(); c.fill();
-    c.fillStyle = 'rgba(255,255,255,.35)'; c.fillRect(0, 0, T, 1.5);
+    for (let x = 1; x < T; x += 4) { const h = 3 + ((x * 37) % 7); c.beginPath(); c.moveTo(x, 1); c.lineTo(x + 1.5, -h * 0.2); c.lineTo(x + 3, 1); c.fill(); }
+    c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.6;
+    c.drawImage(brilho(rgba(bioma.luz, 0.6), 32), -10, -14, T + 20, 26); c.restore();
   });
   const lado = mk(c => {
-    const g = c.createLinearGradient(0, 0, 10, 0);
-    g.addColorStop(0, 'rgba(0,0,0,.45)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-    c.fillStyle = g; c.fillRect(0, 0, 10, T);
+    const g = c.createLinearGradient(0, 0, 14, 0);
+    g.addColorStop(0, rgba(bioma.luz, 0.25)); g.addColorStop(0.15, 'rgba(0,0,0,.35)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g; c.fillRect(0, 0, 14, T);
   });
   const baixo = mk(c => {
-    const g = c.createLinearGradient(0, T, 0, T - 12);
-    g.addColorStop(0, 'rgba(0,0,0,.5)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-    c.fillStyle = g; c.fillRect(0, T - 12, T, 12);
+    const g = c.createLinearGradient(0, T, 0, T - 16);
+    g.addColorStop(0, 'rgba(0,0,0,.55)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g; c.fillRect(0, T - 16, T, 16);
   });
   const plataforma = mk(c => {
+    c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.5;
+    c.drawImage(brilho(rgba(bioma.luz, 0.7), 32), -6, -4, T + 12, 26); c.restore();
     const g = c.createLinearGradient(0, 0, 0, 16);
-    g.addColorStop(0, bioma.cristal[0]); g.addColorStop(0.4, bioma.cristal[1]); g.addColorStop(1, bioma.cristal[2]);
+    g.addColorStop(0, mistura(bioma.cristal[0], '#ffffff', 0.3)); g.addColorStop(0.4, bioma.cristal[1]); g.addColorStop(1, rgba(bioma.cristal[2], 0.6));
     c.fillStyle = g;
-    c.beginPath(); c.moveTo(0, 2); c.lineTo(T, 2); c.lineTo(T, 12); c.lineTo(T * 0.75, 16); c.lineTo(T / 2, 12); c.lineTo(T / 4, 17); c.lineTo(0, 12); c.closePath(); c.fill();
-    c.fillStyle = '#e8c76a'; c.fillRect(0, 0, T, 3);
-    c.fillStyle = 'rgba(255,255,255,.5)'; c.fillRect(0, 3, T, 1);
+    c.beginPath(); c.moveTo(0, 2); c.lineTo(T, 2); c.lineTo(T, 10); c.lineTo(T * 0.75, 15); c.lineTo(T / 2, 10); c.lineTo(T / 4, 16); c.lineTo(0, 10); c.closePath(); c.fill();
+    c.fillStyle = '#f4dc8a'; c.fillRect(0, 0, T, 2.5);
+    c.fillStyle = 'rgba(255,255,255,.7)'; c.fillRect(0, 2.5, T, 1);
   });
   const espinhos = mk(c => {
+    c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.5;
+    c.drawImage(brilho('rgba(255,80,110,.6)', 32), -6, T - 30, T + 12, 34); c.restore();
     for (let i = 0; i < 4; i++) cristal(c, 6 + i * 12, T, 22 + ((i * 13) % 14), 10, bioma.cristal, (i % 2 ? 0.15 : -0.12));
   });
-  return { pedra, fundoEscuro, topo, lado, baixo, plataforma, espinhos };
+  return { textura, N, S, fundoEscuro, topo, lado, baixo, plataforma, espinhos };
 }
 
 // ---------- enfeites ----------

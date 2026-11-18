@@ -62,7 +62,7 @@ function gerarNivelBruto(semente, andar) {
   const tiles = new Uint8Array(W * H);
   const chao = new Int16Array(W).fill(H - 6);   // linha do topo do chão por coluna
   const set = (x, y, v) => { if (x >= 0 && x < W && y >= 0 && y < H) tiles[y * W + x] = v; };
-  const spawns = [], enfeites = [];
+  const spawns = [], enfeites = [], arenas = [];
   let nid = 1;
   const inimigo = (tipo, x, y) => spawns.push({ id: nid++, tipo, x: x * T + T / 2, y: y * T });
   const pesos = TIPOS_POR_ANDAR[((andar - 1) % ANDARES_POR_CICLO) + 1] || TIPOS_POR_ANDAR[3];
@@ -88,12 +88,12 @@ function gerarNivelBruto(semente, andar) {
       const tipo = r.pick(['plano', 'plano', 'degrau', 'degrau', 'fosso', 'torre', 'arena', 'pontes']);
       if (tipo === 'plano') {
         const n = r.int(6, 11), x0 = x; ir(n, g);
-        if (r.chance(0.55)) inimigo(sortearTipo(), x0 + r.int(2, n - 2), g - 1);
+        if (r.chance(0.75)) inimigo(sortearTipo(), x0 + r.int(2, n - 2), g - 1);
         if (r.chance(0.45)) { const px = x0 + r.int(1, Math.max(1, n - 5)); plataforma(px, px + r.int(2, 4), g - 3); if (r.chance(0.5)) inimigo('morcego', px + 1, g - 6); }
       } else if (tipo === 'degrau') {
         g = Math.max(9, Math.min(H - 4, g + r.pick([-2, -1, 1, 2])));
         const n = r.int(4, 8), x0 = x; ir(n, g);
-        if (r.chance(0.4)) inimigo(sortearTipo(), x0 + Math.floor(n / 2), g - 1);
+        if (r.chance(0.55)) inimigo(sortearTipo(), x0 + Math.floor(n / 2), g - 1);
       } else if (tipo === 'fosso') {
         const n = r.int(2, 4), x0 = x;
         ir(n, H - 2);   // buraco com espinhos
@@ -110,7 +110,8 @@ function gerarNivelBruto(semente, andar) {
         const desce = r.int(2, 5); g = Math.min(H - 4, g + desce); ir(2, g);
       } else if (tipo === 'arena') {
         const n = r.int(14, 18), x0 = x; ir(n, g);
-        const q = r.int(2, 4);
+        const q = r.int(3, 4);
+        arenas.push({ x0: x0 * T, x1: (x0 + n) * T, y: g * T });
         for (let i = 0; i < q; i++) inimigo(sortearTipo(), x0 + 3 + Math.floor((n - 6) * i / Math.max(1, q - 1)), g - 1);
         plataforma(x0 + 4, x0 + 8, g - 3); plataforma(x0 + n - 9, x0 + n - 5, g - 5);
         enfeites.push({ t: 'tocha', x: (x0 + 2) * T, y: (g - 2) * T }, { t: 'tocha', x: (x0 + n - 2) * T, y: (g - 2) * T });
@@ -168,7 +169,7 @@ function gerarNivelBruto(semente, andar) {
   const gi = chao[3];
   const gf = chao[W - 6];
   return {
-    w: W, h: H, tiles, chao, spawns, enfeites, chefe, andar,
+    w: W, h: H, tiles, chao, spawns, enfeites, arenas, chefe, andar,
     bioma: biomaDo(andar),
     inicio: { x: 3 * T, y: gi * T },
     portal: chefe ? null : { x: (W - 6) * T, y: gf * T },

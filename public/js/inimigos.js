@@ -1,5 +1,6 @@
 // Monstros: números, inteligência (roda só no anfitrião) e desenho.
 import { T, clamp, sinal, toca } from './util.js';
+export { ARMADURA };
 import { moverCorpo, temChaoFrente, paredeFrente, solido } from './fisica.js';
 import { cristal, brilho, rgba } from './arte.js';
 
@@ -14,13 +15,19 @@ export const DEFS = {
   chefe: { vida: 1500, vel: 120, w: 96, h: 150, dano: 26, alcance: 2000, prep: 0.8, golpe: 0.6, recup: 0.9, visao: 5000, pesado: true, voa: true, cristais: 120, nome: 'Guardião do Prisma' },
 };
 
-export function criarInimigo(sp, mult) {
+// armadura: enquanto tiver, o monstro não se abala com os golpes; quando quebra, fica tonto e leva +50% de dano
+const ARMADURA = { golem: 70, chefe: 260 };
+export function criarInimigo(sp, mult, elite = false) {
   const d = DEFS[sp.tipo];
-  const vida = Math.round(d.vida * mult.vida);
+  const ve = elite ? 2.2 : 1;
+  const vida = Math.round(d.vida * mult.vida * ve);
+  const marm = Math.round(((ARMADURA[sp.tipo] || 0) + (elite ? 45 : 0)) * mult.vida);
+  const esc = elite ? 1.2 : 1;
   return {
-    id: sp.id, tipo: sp.tipo, x: sp.x, y: sp.y, vx: 0, vy: 0, w: d.w, h: d.h,
-    hp: vida, mhp: vida, d: -1, estado: 'ronda', tE: Math.random() * 2, ac: 0,
-    casaX: sp.x, casaY: sp.y, flash: 0, ataque: null, mult, golpeado: 0,
+    id: sp.id, tipo: sp.tipo, x: sp.x, y: sp.y, vx: 0, vy: 0, w: Math.round(d.w * esc), h: Math.round(d.h * esc),
+    hp: vida, mhp: vida, d: -1, estado: 'ronda', tE: Math.random() * 2, ac: 0, elite,
+    arm: marm, marm, armT: 0, atordT: 0,
+    casaX: sp.x, casaY: sp.y, flash: 0, ataque: null, mult: elite ? { ...mult, dano: mult.dano * 1.3, vel: (mult.vel || 1) * 1.08 } : mult, golpeado: 0,
   };
 }
 
@@ -43,12 +50,19 @@ export function atualizarInimigo(en, dt, mundo) {
   const dx = alvo ? alvo.x - en.x : 0;
   const vel = d.vel * (en.mult.vel || 1);
 
+  // armadura volta depois de um tempo quebrada
+  if (en.marm > 0 && en.arm <= 0) { en.armT -= dt; if (en.armT <= 0) en.arm = en.marm; }
   if (en.estado === 'atordoado') {
-    en.vx *= Math.pow(0.02, dt);
-    if (en.tE > 0.3) muda(en, 'persegue');
-    if (!d.voa) moverCorpo(en, dt, nv); else { en.x += en.vx * dt; en.y += en.vy * dt; en.vy *= Math.pow(0.05, dt); }
+    en.vx *= Math.pow(en.noChao === false ? 0.4 : 0.02, dt);
+    const lim = en.atordT || 0.3;
+    const noAr = !d.voa && en.noChao === false;
+    if (en.tE > lim && !noAr) { en.atordT = 0; muda(en, 'persegue'); }
+    if (!d.voa) { en.grav = 0.7; moverCorpo(en, dt, nv); en.grav = 1; }
+    else if (en.tipo === 'chefe') { en.x = clamp(en.x + en.vx * dt, T * 3, (nv.w - 3) * T); }
+    else { en.x += en.vx * dt; en.y += en.vy * dt; en.vy *= Math.pow(0.05, dt); }
     return;
   }
+  const agil = en.mult.agil || 1;   // andares mais fundos: monstros se recuperam mais rápido
 
   if (en.tipo === 'morcego') {
     const alvoY = alvo ? alvo.y - 130 + Math.sin(en.tE * 3 + en.id) * 20 : en.casaY;
@@ -75,7 +89,7 @@ export function atualizarInimigo(en, dt, mundo) {
       if (en.tE > d.golpe || solido(nv, en.x + sinal(en.vx) * 20, en.y - 13)) muda(en, 'recupera');
     } else if (en.estado === 'recupera') {
       en.vx *= Math.pow(0.1, dt); en.vy = -120;
-      if (en.tE > d.recup) muda(en, 'persegue');
+      if (en.tE > d.recup * agil) muda(en, 'persegue');
     }
     const nx = en.x + en.vx * dt, ny = en.y + en.vy * dt;
     if (!solido(nv, nx + sinal(en.vx) * 16, en.y - 13)) en.x = nx; else en.vx *= -0.5;
@@ -115,7 +129,8 @@ export function atualizarInimigo(en, dt, mundo) {
       if (en.tipo === 'conjurador' && alvo) {
         const sx = en.x + en.d * 20, sy = en.y - 56;
         const ang = Math.atan2(alvo.y - 35 - sy, alvo.x - sx);
-        mundo.proj.push({ id: mundo.novoId(), x: sx, y: sy, vx: Math.cos(ang) * 430, vy: Math.sin(ang) * 430, tipo: 0, dano: Math.round(d.dano * en.mult.dano), vida: 3 });
+        const leque = en.elite || agil < 0.85 ? [-0.22, 0, 0.22] : [0];
+        for (const da of leque) mundo.proj.push({ id: mundo.novoId(), x: sx, y: sy, vx: Math.cos(ang + da) * 430, vy: Math.sin(ang + da) * 430, tipo: 0, dano: Math.round(d.dano * en.mult.dano), vida: 3 });
       }
       if (en.tipo === 'esqueleto') en.vx = en.d * 160;
     }
@@ -124,7 +139,7 @@ export function atualizarInimigo(en, dt, mundo) {
     if (en.tE > d.golpe) muda(en, 'recupera');
   } else if (en.estado === 'recupera') {
     en.vx = 0;
-    if (en.tE > d.recup) muda(en, 'persegue');
+    if (en.tE > d.recup * agil) muda(en, 'persegue');
   }
   moverCorpo(en, dt, nv);
 }
@@ -239,6 +254,32 @@ export function desenharInimigo(c, en, t, bioma) {
   const f = en.d < 0 ? -1 : 1;
   c.lineCap = 'round'; c.lineJoin = 'round';
   const prep = en.estado === 'prepara', golpe = en.estado === 'golpe';
+  // aviso vermelho antes do golpe ("cuidado com o que brilha vermelho")
+  if (prep && en.tipo !== 'chefe') {
+    c.save(); c.globalCompositeOperation = 'lighter';
+    const k = 0.6 + 0.4 * Math.sin(t * 30);
+    c.drawImage(brilho('rgba(255,40,70,.85)', 48), -en.w * 1.1, -en.h * 1.25, en.w * 2.2, en.h * 1.5);
+    c.globalAlpha = k; c.strokeStyle = '#ff3355'; c.lineWidth = 2.5;
+    c.beginPath(); c.ellipse(0, -en.h / 2, en.w * 0.9, en.h * 0.7, 0, 0, 7); c.stroke();
+    c.restore();
+  }
+  // elite: aura de cristal e tamanho maior
+  if (en.elite) {
+    c.save(); c.globalCompositeOperation = 'lighter';
+    c.globalAlpha = 0.55 + 0.25 * Math.sin(t * 4 + en.id);
+    c.drawImage(brilho('rgba(255,210,90,.9)', 64), -en.w * 1.3, -en.h * 1.35, en.w * 2.6, en.h * 1.7);
+    c.restore();
+    for (let i = 0; i < 3; i++) {
+      const a = t * 2 + i * 2.09;
+      cristal(c, Math.cos(a) * en.w * 0.8, -en.h * 0.55 + Math.sin(a) * 14 + 6, 14, 7, ['#fff5c0', '#ffc94d', '#b5751c'], 0);
+    }
+    c.scale(1.2, 1.2);
+  }
+  // tonto (armadura quebrada): estrelinhas na cabeça
+  if (en.estado === 'atordoado' && en.atordT > 0.5) {
+    c.fillStyle = '#ffe28a';
+    for (let i = 0; i < 3; i++) { const a = t * 6 + i * 2.09; c.beginPath(); c.arc(Math.cos(a) * 18, -en.h - 8 + Math.sin(a) * 5, 3.5, 0, 7); c.fill(); }
+  }
   if (en.tipo === 'esqueleto') {
     c.scale(f, 1);
     const ph = en.estado === 'persegue' || en.estado === 'ronda' ? t * 9 + en.id : 0;
@@ -342,10 +383,15 @@ export function desenharInimigo(c, en, t, bioma) {
   }
   c.restore();
   // barra de vida
-  if (en.hp < en.mhp && en.tipo !== 'chefe') {
-    const w = Math.max(36, en.w);
-    c.fillStyle = 'rgba(0,0,0,.6)'; c.fillRect(en.x - w / 2, en.y - en.h - 14, w, 5);
-    c.fillStyle = '#ff4d6d'; c.fillRect(en.x - w / 2, en.y - en.h - 14, w * en.hp / en.mhp, 5);
+  if ((en.hp < en.mhp || en.marm > 0 || en.elite) && en.tipo !== 'chefe') {
+    const w = Math.max(40, en.w), by = en.y - en.h * (en.elite ? 1.15 : 1) - 16;
+    c.fillStyle = 'rgba(0,0,0,.6)'; c.fillRect(en.x - w / 2, by, w, 5);
+    c.fillStyle = en.elite ? '#ffc94d' : '#ff4d6d'; c.fillRect(en.x - w / 2, by, w * clamp(en.hp / en.mhp, 0, 1), 5);
+    if (en.marm > 0) {
+      c.fillStyle = 'rgba(0,0,0,.6)'; c.fillRect(en.x - w / 2, by - 6, w, 4);
+      c.fillStyle = en.arm > 0 ? '#7fd8ff' : 'rgba(127,216,255,.25)';
+      c.fillRect(en.x - w / 2, by - 6, w * (en.arm > 0 ? clamp(en.arm / en.marm, 0, 1) : 1 - clamp((en.armT || 0) / 6, 0, 1)), 4);
+    }
   }
 }
 
