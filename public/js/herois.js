@@ -25,12 +25,13 @@ export const CLASSES = {
   },
   vampiro: {
     nome: 'Vampiro', nomeF: 'Vampira', cor: '#ff4d6d', vida: 115, vel: 360,
-    desc: 'Florete rápido que suga vida a cada golpe. Habilidade: Revoada (vira morcegos e atravessa os inimigos).',
+    desc: 'Lâminas de sangue de média distância que miram sozinhas e sugam vida. Habilidade: Revoada (vira morcegos e atravessa os inimigos).',
     hab: 'Revoada', habCd: 4, rouba: 0.12,
     ataques: [
-      { dur: 0.24, ini: 0.06, fim: 0.15, dano: 14, alc: 84, alt: 40, kb: 120, tipo: 'estocada' },
-      { dur: 0.24, ini: 0.06, fim: 0.15, dano: 14, alc: 84, alt: 40, kb: 120, tipo: 'estocada' },
-      { dur: 0.4, ini: 0.12, fim: 0.26, dano: 26, alc: 80, alt: 70, kb: 300, tipo: 'corte', forte: true },
+      // lâminas de sangue: média distância (~260px), atravessam e miram sozinhas
+      { dur: 0.26, ini: 0.08, fim: 0.1, dano: 15, tipo: 'estocada', tiro: { vel: 900, raio: 18, perfura: true, sangue: true, vida: 0.3, arco: 1 }, kb: 130 },
+      { dur: 0.26, ini: 0.08, fim: 0.1, dano: 15, tipo: 'estocada', tiro: { vel: 900, raio: 18, perfura: true, sangue: true, vida: 0.3, arco: -1 }, kb: 130 },
+      { dur: 0.42, ini: 0.14, fim: 0.16, dano: 30, tipo: 'corte', tiro: { vel: 820, raio: 30, perfura: true, sangue: true, vida: 0.36, leque: true }, kb: 320, forte: true },
     ],
   },
   lobisomem: {

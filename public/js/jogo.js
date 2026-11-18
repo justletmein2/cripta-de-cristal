@@ -11,7 +11,7 @@ import { som, iniciarSom, musica, alternarSom } from './som.js';
 import * as rede from './rede.js';
 import { carregarSprites, pontaArma } from './sprites.js';
 import * as esp from './espetaculo.js';
-carregarSprites(['cavaleiro_m', 'cavaleiro_f', 'mago_f', 'mago_m']);
+carregarSprites(['cavaleiro_m', 'cavaleiro_f', 'mago_f', 'mago_m', 'vampiro_f']);
 
 const $ = s => document.querySelector(s);
 const cv = $('#tela'), ctx = cv.getContext('2d');
@@ -507,10 +507,11 @@ function atualizarEu(dt) {
     if (h.cargaT > 0.32) {
       h.cargaUsada = true;
       const base = C.ataques[0];
-      h.atk = base.tiro ? { dur: 0.5, ini: 0.16, fim: 0.17, dano: Math.round(base.dano * 2.3), tiro: { vel: 560, raio: 22, perfura: true }, kb: 380, forte: true, lanca: true, especial: true }
+      h.atk = base.tiro && base.tiro.sangue ? { dur: 0.5, ini: 0.16, fim: 0.17, dano: Math.round(base.dano * 2.6), tiro: { vel: 700, raio: 46, perfura: true, sangue: true, vida: 0.5 }, kb: 380, forte: true, lanca: true, especial: true }
+        : base.tiro ? { dur: 0.5, ini: 0.16, fim: 0.17, dano: Math.round(base.dano * 2.3), tiro: { vel: 560, raio: 22, perfura: true }, kb: 380, forte: true, lanca: true, especial: true }
         : { dur: 0.44, ini: 0.1, fim: 0.28, dano: Math.round(base.dano * 1.25), alc: Math.max(90, base.alc || 80), alt: 140, kb: 60, tipo: 'subida', forte: true, lanca: true, especial: true };
       h.combo = 2; h.atkT = 0; h.acertados.clear(); h.tiroFeito = false; h.corteFeito = false; h.ak++;
-      if (base.tiro) { const alvo = inimigoMaisPerto(h, 900); if (alvo) h.d = sinal(alvo.x - h.x) || h.d; }
+      if (base.tiro) { const alvo = inimigoMaisPerto(h, base.tiro.sangue ? 360 : 900); if (alvo) h.d = sinal(alvo.x - h.x) || h.d; }
       som.carregado();
     }
   } else if (!ctrl.segura.atacar) { h.cargaT = 0; h.cargaUsada = false; }
@@ -524,7 +525,7 @@ function atualizarEu(dt) {
       h.combo = (at && !at.especial || h.comboT > 0) ? (h.combo + 1) % ats.length : 0;
       h.atk = ats[h.combo]; h.atkT = 0; h.acertados.clear(); h.tiroFeito = false; h.corteFeito = false; h.ak++;
       if (mx) h.d = mx;
-      if (h.atk.tiro) { const alvo = inimigoMaisPerto(h, 900); if (alvo) h.d = sinal(alvo.x - h.x) || h.d; }
+      if (h.atk.tiro) { const alvo = inimigoMaisPerto(h, h.atk.tiro.sangue ? 360 : 900); if (alvo) h.d = sinal(alvo.x - h.x) || h.d; }
       som.golpe(h.atk.forte);
     }
   }
@@ -541,14 +542,19 @@ function atualizarEu(dt) {
       if (!at.tiro) efeitoCorte(h.x, h.y, h.d, at, C.cor, h.combo);
     }
     if (at.tiro && h.atkT >= ini && !h.tiroFeito) {
-      h.tiroFeito = true; som.magia();
-      const pt = pontaArma(h.classe, h.sexo) || [62, -62];
+      h.tiroFeito = true;
+      const sg = !!at.tiro.sangue;
+      if (sg) som.golpe(at.forte); else som.magia();
+      const pt = pontaArma(h.classe, h.sexo) || [sg ? 40 : 62, sg ? -64 : -62];
       const sx = h.x + h.d * pt[0], sy = h.y + pt[1];
       // mira automática: no inimigo mais perto à frente; sem ninguém, vai reto
-      const alvo = inimigoMaisPerto(h, 900, true);
+      const alvo = inimigoMaisPerto(h, sg ? 360 : 900, true);
       let ang = h.d > 0 ? 0 : Math.PI;
       if (alvo) ang = Math.atan2((alvo.y - alvo.h / 2) - sy, alvo.x - sx);
-      P.tiros.push({ x: sx, y: sy, vx: Math.cos(ang) * at.tiro.vel, vy: Math.sin(ang) * at.tiro.vel, raio: at.tiro.raio, dano: at.dano, kb: at.kb, perfura: at.tiro.perfura, forte: !!at.forte, lanca: !!at.lanca, acertados: new Set(), vida: 1.2 });
+      if (sg && h.noChao && !at.lanca) h.vx += h.d * 120;
+      const angs = at.tiro.leque ? [ang - 0.22, ang, ang + 0.22] : [ang];
+      for (const a of angs) P.tiros.push({ x: sx, y: sy, vx: Math.cos(a) * at.tiro.vel, vy: Math.sin(a) * at.tiro.vel, raio: at.tiro.raio * (a === ang ? 1 : 0.7), dano: a === ang ? at.dano : Math.round(at.dano * 0.5), kb: at.kb, perfura: at.tiro.perfura, forte: !!at.forte, lanca: !!at.lanca, acertados: new Set(), vida: at.tiro.vida || 1.2, sangue: sg, arco: at.tiro.arco || 0, t: 0 });
+      if (sg) faiscas(sx, sy, '#ff2a4a', 8);
     }
     if (!at.tiro && h.atkT >= ini && h.atkT <= fim) {
       const cx = caixaAtaque(h, at);
@@ -662,6 +668,31 @@ function reviver(frac) {
 }
 
 // ---------- efeitos ----------
+// lâmina de sangue mágico: meia-lua afiada vermelha, com brilho e fio claro
+function laminaSangue(c, x, y, ang, r, t, arco, alfa) {
+  r *= 1.7;   // o desenho é maior que a área de acerto
+  c.save(); c.translate(x, y); c.rotate(ang + arco * 0.25); c.globalAlpha = alfa;
+  c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = alfa * 0.8;
+  c.drawImage(brilho('rgba(255,30,60,.9)', 32), -r * 2.4, -r * 2, r * 3.6, r * 4); c.restore();
+  const ondula = 1 + Math.sin(t * 40) * 0.06;
+  // rastro (fatias mais apagadas atrás)
+  for (let i = 3; i >= 0; i--) {
+    const o = -i * r * 0.55, a = i ? 0.22 * (4 - i) / 4 : 1;
+    c.globalAlpha = alfa * a;
+    c.beginPath();
+    c.moveTo(o - r * 0.15, -r * 1.25 * ondula);
+    c.quadraticCurveTo(o + r * 1.15, 0, o - r * 0.15, r * 1.25 * ondula);
+    c.quadraticCurveTo(o + r * 0.45, 0, o - r * 0.15, -r * 1.25 * ondula);
+    c.fillStyle = i ? '#e01a40' : '#c8102e'; c.fill();
+    if (!i) { c.strokeStyle = '#2a0008'; c.lineWidth = 1.5; c.stroke(); }
+  }
+  c.globalAlpha = alfa;
+  // fio cortante (borda da frente)
+  c.beginPath(); c.moveTo(-r * 0.12, -r * 1.2); c.quadraticCurveTo(r * 1.1, 0, -r * 0.12, r * 1.2);
+  c.strokeStyle = '#ff3355'; c.lineWidth = Math.max(2, r * 0.16); c.stroke();
+  c.strokeStyle = '#ffe3ea'; c.lineWidth = Math.max(1, r * 0.06); c.stroke();
+  c.restore();
+}
 function efeitoCorte(x, y, d, at, cor, combo) {
   P.fx.push({ tipo: at.tipo || 'corte', x, y, d, t: 0, dur: at.forte ? 0.28 : 0.2, cor, alc: at.alc || 70, alt: at.alt || 60, forte: !!at.forte, combo });
 }
@@ -714,14 +745,19 @@ function atualizarEfeitos(dt) {
   // tiros do mago
   const h = P.eu;
   for (const s of P.tiros) {
-    s.x += s.vx * dt; s.y += (s.vy || 0) * dt; s.vida -= dt;
-    if (Math.random() < 0.7) P.parts.push({ x: s.x, y: s.y + (Math.random() - 0.5) * 8, vx: -s.vx * 0.05, vy: 0, vida: 0.25, max: 0.25, cor: '#c79bff', tam: s.raio * 0.4, grav: 0 });
-    if (solido(nv, s.x, s.y)) { s.vida = 0; faiscas(s.x, s.y, '#c79bff', 6); continue; }
+    s.x += s.vx * dt; s.y += (s.vy || 0) * dt; s.vida -= dt; s.t = (s.t || 0) + dt;
+    const corT = s.sangue ? '#ff2a4a' : '#c79bff';
+    if (s.sangue) {
+      // gotas de sangue que pingam do corte
+      if (Math.random() < 0.9) P.parts.push({ x: s.x - s.vx * 0.02 + (Math.random() - 0.5) * s.raio, y: s.y + (Math.random() - 0.5) * s.raio * 1.4, vx: s.vx * 0.08, vy: -60 + Math.random() * 80, vida: 0.4, max: 0.4, cor: Math.random() < 0.5 ? '#ff2a4a' : '#9a0020', tam: 2 + Math.random() * 3, grav: 900 });
+    } else if (Math.random() < 0.7) P.parts.push({ x: s.x, y: s.y + (Math.random() - 0.5) * 8, vx: -s.vx * 0.05, vy: 0, vida: 0.25, max: 0.25, cor: '#c79bff', tam: s.raio * 0.4, grav: 0 });
+    if (solido(nv, s.x, s.y)) { s.vida = 0; faiscas(s.x, s.y, corT, 6); continue; }
     for (const en of P.ini.values()) {
       if (s.acertados.has(en.id) || !(en.hp > 0)) continue;
       const b = corpo(en);
       if (s.x + s.raio > b.x && s.x - s.raio < b.x + b.w && s.y + s.raio > b.y && s.y - s.raio < b.y + b.h) {
-        s.acertados.add(en.id); h.d = sinal(s.vx); golpear(en, s.dano, s.kb, s.forte, s.x, s.y, s.lanca);
+        s.acertados.add(en.id); if (!s.sangue) h.d = sinal(s.vx); golpear(en, s.dano, s.kb, s.forte, s.x, s.y, s.lanca);
+        if (s.sangue) { faiscas(s.x, s.y, '#ff2a4a', 10); P.fx.push({ tipo: 'talho', x: s.x, y: s.y, t: 0, dur: 0.22, ang: Math.atan2(s.vy || 0, s.vx), r: s.raio * 2.2 }); }
         if (!s.perfura) { s.vida = 0; break; }
       }
     }
@@ -804,7 +840,7 @@ function meuEstado() {
     x: Math.round(h.x), y: Math.round(h.y), vx: Math.round(h.vx), vy: Math.round(h.vy), d: h.d, a: h.anim, f: Math.round(h.fase * 100) / 100,
     cb: h.combo, ak: h.ak, c: h.classe, s: h.sexo, n: G.nome || 'Herói', hp: Math.round(h.hp), mhp: h.mhp, cai: h.caido, por: h.naPorta,
     and: P.andar, fu: h.furiaT > 0, ch: h.noChao ? 1 : 0, rv: Math.round(h.reviveT * 10) / 10,
-    ps: P.tiros.length ? P.tiros.map(s => [Math.round(s.x), Math.round(s.y), Math.round(s.vx), s.raio, Math.round(s.vy || 0)]) : 0,
+    ps: P.tiros.length ? P.tiros.map(s => [Math.round(s.x), Math.round(s.y), Math.round(s.vx), s.raio, Math.round(s.vy || 0), s.sangue ? 1 : 0]) : 0,
     fx: h.fx || 0, t: rede.agora(),
   };
 }
@@ -939,9 +975,10 @@ function desenhar() {
     c.fillStyle = st.cai ? '#888' : '#7dffb0'; c.fillRect(o.x - 24, o.y - 100, 48 * clamp(st.hp / st.mhp, 0, 1), 5);
     c.fillStyle = '#fff'; c.fillText(st.n || '', o.x, o.y - 106);
     if (st.cai) { c.fillStyle = '#ffe28a'; c.fillText(st.rv > 0 ? 'levantando…' : '⬇ ajude!', o.x, o.y - 120); }
-    if (st.ps) for (const [x, y, vx, r, vy] of st.ps) {
+    if (st.ps) for (const [x, y, vx, r, vy, sg] of st.ps) {
       const id = clamp((Date.now() - (st.t || 0)) / 1000, 0, 0.12);
       const ex = x + vx * id, ey = y + (vy || 0) * id;
+      if (sg) { laminaSangue(c, ex, ey, Math.atan2(vy || 0, vx), r, t, 0, 1); continue; }
       c.save(); c.globalCompositeOperation = 'lighter'; c.drawImage(brilho('rgba(199,155,255,.9)', 32), ex - r * 2.2, ey - r * 2.2, r * 4.4, r * 4.4); c.restore();
     }
   }
@@ -966,6 +1003,7 @@ function desenhar() {
   esp.desenharMundo(c, t);
   // tiros do mago
   for (const s of P.tiros) {
+    if (s.sangue) { laminaSangue(c, s.x, s.y, Math.atan2(s.vy || 0, s.vx), s.raio, s.t || 0, s.arco || 0, clamp(s.vida / 0.12, 0, 1)); continue; }
     c.save(); c.globalCompositeOperation = 'lighter';
     c.drawImage(brilho('rgba(199,155,255,.95)', 32), s.x - s.raio * 2.4, s.y - s.raio * 2.4, s.raio * 4.8, s.raio * 4.8);
     c.restore();
@@ -1087,6 +1125,14 @@ function desenharFx(c, f) {
     c.globalAlpha = 1 - k; c.strokeStyle = f.cor; c.lineWidth = 16 * (1 - k * 0.5);
     c.beginPath(); c.arc(0, 0, 70, Math.PI * 0.5, Math.PI * 0.5 - Math.PI * 1.1 * Math.min(1, k * 2.5), true); c.stroke();
     c.strokeStyle = '#fff'; c.lineWidth = 3; c.stroke();
+  } else if (f.tipo === 'talho') {
+    // corte de sangue no alvo: risco fino que abre e espirra
+    c.translate(f.x, f.y); c.rotate(f.ang + 0.6);
+    const L = f.r * (0.6 + k * 0.6);
+    c.globalAlpha = 1 - k; c.lineCap = 'round';
+    c.strokeStyle = '#7a0016'; c.lineWidth = 9 * (1 - k) + 2; c.beginPath(); c.moveTo(-L, 0); c.lineTo(L, 0); c.stroke();
+    c.strokeStyle = '#ff3355'; c.lineWidth = 4 * (1 - k) + 1; c.stroke();
+    c.strokeStyle = '#ffe0e6'; c.lineWidth = 1.2; c.stroke();
   } else if (f.tipo === 'estocada') {
     c.translate(f.x, f.y - 46); c.scale(f.d, 1);
     c.globalAlpha = 1 - k; c.strokeStyle = f.cor; c.lineWidth = 6 * (1 - k);
@@ -1511,7 +1557,7 @@ function montarCartas() {
   const C = CLASSES[G.classe];
   $('#heroiNome').textContent = nomeClasse(G.classe, G.sexo);
   $('#heroiDesc').textContent = C.desc;
-  const alcance = C.ataques[0].tiro ? 'Longe' : C.ataques[0].alc > 75 ? 'Médio' : 'Curto';
+  const alcance = C.ataques[0].tiro ? (C.ataques[0].tiro.sangue ? 'Médio' : 'Longe') : C.ataques[0].alc > 75 ? 'Médio' : 'Curto';
   $('#heroiStats').innerHTML = `<span>❤️ Vida ${C.vida}</span><span>👟 Velocidade ${C.vel}</span><span>🎯 Alcance ${alcance}</span><span>✨ ${C.hab} · ${C.habCd}s</span>`;
   $('#bHomem').classList.toggle('ativo', G.sexo === 'm'); $('#bMulher').classList.toggle('ativo', G.sexo === 'f');
 }

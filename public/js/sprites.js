@@ -15,6 +15,8 @@ const DEFS = {
   mago_f: { ponta: [74, -88], pulo: [1, 3, 5, 7, 9, 11, 13], golpe: { atk1: 5 }, combo: [['atk1', 1, 5, 9], ['atk1', 2, 5, 9], ['atk1', 1, 6, 15]], semFerido: true, vaivem: true },
   cavaleiro_f: { pulo: [3, 4, 5, 6, 7, 8, 9], golpe: { atk1: 10 }, ritmo: 0.62,
     combo: [['atk1', 6, 10, 11], ['atk1', 11, 8, 7], ['atk1', 7, 10, 16]] },   // desce, sobe (golpe de volta), desce forte
+  // Vampira (vídeo do Flow): garras pra frente, garras pra cima, giro com a perna
+  vampiro_f: { ponta: [58, -80], pulo: [0, 1, 2, 3, 4, 5, 6], golpe: { atk1: 6 }, combo: [['atk1', 1, 5, 8], ['atk1', 8, 17, 18], ['atk2', 0, 4, 14]], semFerido: true, vaivem: true },
 };
 
 const cache = {};

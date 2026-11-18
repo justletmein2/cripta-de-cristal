@@ -10,7 +10,7 @@ from scipy import ndimage
 HEROI, A, B, SAIDA = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 ESC = 0.38          # 720p do vídeo -> folha
 K = 1 / 1.4         # a folha tem 1.4x a resolução da dos cavaleiros
-FUNDO = 5
+FUNDO = 2 if sys.argv[1] == 'vampiro_f' else 5
 
 # animação: (pasta, quadros, espelhar?, ancora)  ancora: 'tronco' = alinha cada quadro pelo tronco; 'fixa' = alinha pelo 1º quadro
 TRECHOS = {}
@@ -29,7 +29,19 @@ TRECHOS['mago_m'] = {
     'atk1':   (B, list(range(67, 113, 3)), False, 'fixa'),
     'morrer': (B, list(range(140, 172, 2)), False, 'fixa'),
 }
+# Vampira: um vídeo só (Flow). Parado olhando pra direita; golpe, corrida e "morrer" virada pra esquerda.
+# Não tem pulo: usa o meio da corrida (pernas no ar).
+TRECHOS['vampiro_f'] = {
+    'parado': (A, list(range(1, 20, 2)), False, 'fixa'),
+    'correr': (A, list(range(150, 163)), True, 'tronco'),      # ciclo de 13 quadros (150 = 163)
+    'pular':  (A, list(range(146, 160, 2)), True, 'tronco'),
+    'atk1':   (A, list(range(40, 95, 3)), True, 'fixa'),       # garras: prepara, estica, segura, recolhe
+    'atk2':   (A, list(range(97, 126, 2)), True, 'fixa'),      # giro com a perna (golpe final)
+    'morrer': (A, list(range(125, 141, 3)), True, 'fixa'),
+}
 ANIMS = TRECHOS[HEROI]
+# roupa escura em fundo preto puro: corte bem mais baixo
+LIM = (4, 8, 7) if HEROI == 'vampiro_f' else (14, 26, 24)   # início do suave, largura, sólido
 LIMPAR_VERMELHO = HEROI == 'mago_m'   # o vídeo 1 do Mago saiu com manchas vermelhas no rosto
 
 def recortar(pasta, i, esp):
@@ -42,8 +54,8 @@ def recortar(pasta, i, esp):
         import cv2
         rgb = cv2.inpaint(rgb.astype(np.uint8), mancha.astype(np.uint8), 6, cv2.INPAINT_TELEA).astype(np.float32)
     v = rgb.max(2)
-    suave = np.clip((v - 14) / 26, 0, 1)
-    solido = v > 24
+    suave = np.clip((v - LIM[0]) / LIM[1], 0, 1)
+    solido = v > LIM[2]
     lab, n = ndimage.label(solido)
     if n:
         tam = ndimage.sum(solido, lab, range(1, n + 1))

@@ -19,7 +19,7 @@ export function retratoDe(classe, sexo, escolha = false) {
 }
 for (const n of ['cavaleiro_f', 'cavaleiro_m', 'mago_f', 'mago_m', 'vampiro_f']) { const i = new Image(); i.src = `sprites/retrato_${n}.webp`; retratos[n] = i; }
 // retratos próprios da tela de escolha (quando diferentes do especial)
-for (const n of ['vampiro_f']) { const i = new Image(); i.src = `sprites/retrato_sel_${n}.webp`; retratos['sel_' + n] = i; }
+for (const n of []) { const i = new Image(); i.src = `sprites/retrato_sel_${n}.webp`; retratos['sel_' + n] = i; }
 
 // ---------- quadro de impacto ----------
 let ultimoImpacto = 0;
@@ -218,7 +218,7 @@ export function desenharMundo(c, t) {
   }
   // fantasmas
   for (const f of P.fantasmas) {
-    const a = (1 - f.t / f.vida) * 0.55;
+    const a = (1 - f.t / f.vida) * (temSprite(f.classe, f.sexo) ? 0.24 : 0.55);   // arte clara estoura no 'lighter'
     c.save(); c.translate(f.x, f.y); c.scale(f.d < 0 ? -1 : 1, 1);
     c.globalCompositeOperation = 'lighter'; c.globalAlpha = a;
     desenharHeroi(c, f.classe, f.sexo, f.pose, t, {});
