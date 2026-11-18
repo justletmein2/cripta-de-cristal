@@ -12,6 +12,7 @@ export function alternarFlashes() { config.flashes = !config.flashes; localStora
 
 // ---------- retratos pro corte de cena ----------
 const retratos = {};
+export function retratoDe(classe, sexo) { const r = retratos[`${classe}_${sexo === 'f' ? 'f' : 'm'}`]; return r && r.complete && r.naturalWidth ? r : null; }
 for (const n of ['cavaleiro_f', 'cavaleiro_m', 'mago_f', 'mago_m']) { const i = new Image(); i.src = `sprites/retrato_${n}.webp`; retratos[n] = i; }
 
 // ---------- quadro de impacto ----------

@@ -1504,7 +1504,7 @@ function montarCartas() {
   const box = $('#cartas'); box.innerHTML = '';
   for (const k of ORDEM) {
     const el = document.createElement('button'); el.className = 'carta' + (k === G.classe ? ' ativa' : '');
-    el.innerHTML = `<canvas width="120" height="120" data-k="${k}"></canvas><span>${nomeClasse(k, G.sexo)}</span>`;
+    el.innerHTML = `<canvas width="240" height="240" data-k="${k}"></canvas><span>${nomeClasse(k, G.sexo)}</span>`;
     el.onclick = () => { G.classe = k; localStorage.setItem('cc_classe', k); montarCartas(); };
     box.appendChild(el);
   }
@@ -1525,7 +1525,9 @@ function desenharPreviews(t) {
   document.querySelectorAll('#cartas canvas').forEach(cvs => {
     const c = cvs.getContext('2d'), k = cvs.dataset.k;
     c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cvs.width, cvs.height);
-    c.setTransform(1.15, 0, 0, 1.15, 60, 112);
+    const ret = esp.retratoDe(k, G.sexo);
+    if (ret) { c.drawImage(ret, 95, 20, 250, 250, 0, 0, cvs.width, cvs.height); return; }
+    c.setTransform(2.3, 0, 0, 2.3, 120, 224);
     desenharHeroi(c, k, G.sexo, calcularPose({ anim: 'parado', classe: k }, t + ORDEM.indexOf(k)), t, {});
   });
   // destaque: alterna parado / correndo / atacando
@@ -1542,8 +1544,15 @@ function desenharPreviews(t) {
   }
   c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cvs.width, cvs.height);
   c.save(); c.globalCompositeOperation = 'lighter';
-  c.drawImage(brilho(rgba(C.cor, 0.45), 96), 60, 60, 240, 240); c.restore();
-  c.setTransform(3, 0, 0, 3, 170, 320);
+  c.drawImage(brilho(rgba(C.cor, 0.45), 96), 120, 120, 480, 480); c.restore();
+  const ret = esp.retratoDe(G.classe, G.sexo);
+  if (ret) {
+    // retrato desenhado: flutua de leve, sem pixelar
+    const ph = cvs.height * 0.98, pw = ph * ret.naturalWidth / ret.naturalHeight;
+    c.drawImage(ret, (cvs.width - pw) / 2, cvs.height - ph + Math.sin(t * 1.6) * 6, pw, ph);
+    return;
+  }
+  c.setTransform(5, 0, 0, 5, 330, 640);
   c.fillStyle = 'rgba(0,0,0,.35)'; c.beginPath(); c.ellipse(0, 0, 20, 4, 0, 0, 7); c.fill();
   desenharHeroi(c, G.classe, G.sexo, calcularPose(demo, t), t, { furia: false });
 }
@@ -1551,6 +1560,8 @@ function desenharMiniaturas(t) {
   document.querySelectorAll('#listaJogadores canvas').forEach(cvs => {
     const c = cvs.getContext('2d');
     c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, 96, 96);
+    const ret = esp.retratoDe(cvs.dataset.classe || 'cavaleiro', cvs.dataset.sexo);
+    if (ret) { c.drawImage(ret, 95, 20, 250, 250, 0, 0, 96, 96); return; }
     c.setTransform(1, 0, 0, 1, 48, 92);
     desenharHeroi(c, cvs.dataset.classe || 'cavaleiro', cvs.dataset.sexo, calcularPose({ anim: 'parado' }, t), t, {});
   });

@@ -39,7 +39,7 @@ input:focus { border-color: #c79bff; box-shadow: 0 0 12px rgba(199, 155, 255, .6
 #telaHeroi { background: radial-gradient(circle at 30% 40%, #2a1660, #07051a 70%); }
 .heroiLayout { display: flex; gap: 18px; width: min(1000px, 100%); align-items: center; margin: auto; }
 .destaque { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-#previewGrande { width: min(36vh, 300px); height: min(36vh, 300px); border-radius: 50%; background: radial-gradient(circle, rgba(155, 107, 255, .35), rgba(20, 10, 50, 0) 70%); }
+#previewGrande { width: min(36vh, 300px); height: min(36vh, 300px); background: radial-gradient(circle, rgba(155, 107, 255, .35), rgba(20, 10, 50, 0) 70%); }
 .sexo { display: flex; gap: 8px; }
 .chip { font: inherit; font-weight: 800; padding: 8px 14px; border-radius: 999px; border: 2px solid #7c4dff; background: #120c30; color: #cbb8ff; cursor: pointer; }
 .chip.ativo { background: #7c4dff; color: #fff; box-shadow: 0 0 12px #9b6bff; }
