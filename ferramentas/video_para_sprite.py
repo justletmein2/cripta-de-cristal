@@ -42,7 +42,7 @@ TRECHOS['vampiro_f'] = {
 # Vampiro: vídeo do Flow com sabre e kunais, apagados antes com tirar_lamina.py (pasta "limpa").
 # Corre e lança virado pra direita; pulo virado pra esquerda; sem pose parada (usa o fim do pouso).
 TRECHOS['vampiro_m'] = {
-    'parado': (A, list(range(183, 191)), True, 'fixa'),
+    'parado': (A, [188, 189, 190], True, 'base'),               # fim da queda, já com as pernas esticadas, pés alinhados no chão
     'correr': (A, list(range(20, 37)), False, 'tronco'),        # ciclo de 17 quadros (20 = 37)
     'pular':  (A, list(range(137, 186, 3)), True, 'tronco'),
     'atk1':   (A, [63, 66, 69] + list(range(105, 126, 2)), False, 'fixa'),   # recolhe e estica o braço (pula os quadros com o leque de kunais)
