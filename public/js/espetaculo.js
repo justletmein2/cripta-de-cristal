@@ -12,7 +12,7 @@ export function alternarFlashes() { config.flashes = !config.flashes; localStora
 
 // ---------- retratos pro corte de cena ----------
 const retratos = {};
-for (const n of ['cavaleiro_f', 'cavaleiro_m', 'mago_f']) { const i = new Image(); i.src = `sprites/retrato_${n}.webp`; retratos[n] = i; }
+for (const n of ['cavaleiro_f', 'cavaleiro_m', 'mago_f', 'mago_m']) { const i = new Image(); i.src = `sprites/retrato_${n}.webp`; retratos[n] = i; }
 
 // ---------- quadro de impacto ----------
 let ultimoImpacto = 0;
