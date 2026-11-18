@@ -79,6 +79,7 @@
   <div id="toque" class="toque">
     <div id="joy"><div id="joyBase"><div id="joyPino"></div></div><span class="dicaJoy">mover</span></div>
     <div class="acoes">
+      <button data-acao="esp" class="bAcao bEsp" id="bEsp">ESP</button>
       <button data-acao="pocao" class="bAcao bPocao" id="bPocao">🧪<b id="nPocao">2</b></button>
       <button data-acao="hab" class="bAcao bHab" id="bHab"><span id="habNome">Hab.</span></button>
       <button data-acao="rolar" class="bAcao bRolar">⟳</button>
@@ -126,6 +127,7 @@
     <div class="botoes">
       <button class="btn grande" id="bContinuarPausa">Continuar</button>
       <button class="btn roxo" id="bSom">🔊 Som ligado</button>
+      <button class="btn roxo" id="bFlashes">⚡ Flashes de impacto: ligados</button>
       <button class="btn fantasma" id="bDesistir">Sair para o menu</button>
     </div>
   </div>
@@ -137,10 +139,12 @@
     <h2>Como jogar</h2>
     <p>Atravesse cada andar até o <b>portal</b> no fim. A cada 3 andares, um <b>chefe</b> espera no Trono do Prisma.</p>
     <ul>
-      <li><b>Celular:</b> deite o celular. Arraste o polegar esquerdo para andar (puxe pra baixo pra descer de plataformas). Botões: ▲ pular, ⚔ atacar (aperte várias vezes pra combo), ⟳ rolar (atravessa golpes), habilidade e 🧪 poção.</li>
-      <li><b>Computador:</b> ← → andar, Espaço pular, J atacar, K habilidade, L ou Shift rolar, Q poção, Esc pausa.</li>
+      <li><b>Celular:</b> deite o celular. Arraste o polegar esquerdo para andar (puxe pra baixo pra descer de plataformas). Botões: ▲ pular, ⚔ atacar (aperte várias vezes pra combo, segure pro golpe carregado), ⟳ blink (atravessa golpes), habilidade, ESP especial e 🧪 poção.</li>
+      <li><b>Computador:</b> ← → andar, Espaço pular, J atacar, K habilidade, L ou Shift rolar, U especial, Q poção, Esc pausa.</li>
       <li>Monstros brilham em <b style="color:#ff6080">vermelho</b> antes de atacar. Dê o blink bem na hora do golpe pra fazer uma <b>Esquiva Perfeita</b>: o tempo desacelera e seus próximos golpes são críticos.</li>
       <li><b>Segure o ataque</b> pra um golpe carregado: os guerreiros jogam o monstro pro alto (e dá pra continuar batendo no ar), os magos soltam um orbe gigante.</li>
+      <li>Bater enche a barra roxa de <b>Especial</b>. Cheia, aperte <b>ESP</b> (ou U no teclado) pro golpe mais forte do seu herói.</li>
+      <li>No altar aparecem <b>Ecos</b>: poderes que agem sozinhos (cópia fantasma, raios, orbe, brasas, estilhaços). Pegar de novo deixa o eco mais forte.</li>
       <li>Acertos seguidos formam um <b>combo</b> que aumenta o dano. Levar dano zera o combo.</li>
       <li>Monstros com barra <b style="color:#7fd8ff">azul</b> têm armadura: bata até quebrar e eles ficam tontos levando dano extra. Os <b style="color:#ffc94d">dourados</b> são elites.</li>
       <li>Com amigos: quem cai fica no chão — fique perto por 2 segundos pra levantar. A Luz Sagrada do Padre também levanta.</li>

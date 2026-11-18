@@ -10,6 +10,7 @@ import { ctrl, consumir, temPedido, ligarControles } from './controles.js';
 import { som, iniciarSom, musica, alternarSom } from './som.js';
 import * as rede from './rede.js';
 import { carregarSprites, pontaArma } from './sprites.js';
+import * as esp from './espetaculo.js';
 carregarSprites(['cavaleiro_m', 'cavaleiro_f', 'mago_f', 'mago_m']);
 
 const $ = s => document.querySelector(s);
@@ -73,7 +74,7 @@ function criarHeroi(classe, sexo) {
     habCd: 0, habT: 0, habDur: 0, habAcertados: new Set(), rolarT: 0, rolarCd: 0, invT: 0, feridoT: 0, coyote: 0, pulos: 0, descerT: 0, cortouPulo: false,
     pocoes: 2, pocoesMax: 2, cristais: 0, mods: { dano: 1, vel: 1, atkVel: 1, cd: 1, rouba: 0, crit: 0.06, def: 1 }, bencaos: [],
     caido: false, reviveT: 0, furiaT: 0, seguro: { x: 0, y: 0 }, naPorta: false, fx: null, fxId: 0,
-    golpesVistos: new Map(), zonasVistas: new Set(), mortos: 0,
+    golpesVistos: new Map(), zonasVistas: new Set(), mortos: 0, esp: 0, ecos: {}, contLamina: 0,
   };
 }
 
@@ -89,6 +90,7 @@ function iniciarAndar(andar, semente) {
     golpeFila: [], golpeN: 0, golpeUlt: {}, envT: 0, envIniT: 0, checarT: 0, projRemovidos: new Set(), fxVistos: {}, chefeMorto: false,
     visto: new Set(), recebeuIni: false, status: 'jogando', inicioT: performance.now(),
     cmb: { n: 0, t: 0, max: 0, pulso: 0 }, lentoT: 0, arenas: [],
+    fantasmas: [], espFx: [], luas: [], raios: [], brasas: [], espFila: [], cutin: null, espAtivo: null, impacto: null, fantT: 0,
   };
   // posiciona o herói
   const idx = Math.max(0, jogadoresOnline().indexOf(meuUid()));
@@ -314,7 +316,7 @@ function efeitoQuebra(en) {
   P.tremor = Math.max(P.tremor, 12); P.paraT = Math.max(P.paraT, 0.12);
   som.quebraArmadura();
 }
-function golpear(en, base, kb, forte, x, y, lanca = false) {
+function golpear(en, base, kb, forte, x, y, lanca = false, deEco = false) {
   const h = P.eu, C = CLASSES[h.classe];
   // contador de combo: cada acerto seguido aumenta o dano (até +30%)
   const cb = P.cmb; cb.n++; cb.t = 1.8; cb.pulso = 1; if (cb.n > cb.max) cb.max = cb.n;
@@ -333,6 +335,8 @@ function golpear(en, base, kb, forte, x, y, lanca = false) {
   som.acerto(forte);
   P.paraT = Math.max(P.paraT, forte ? 0.075 : 0.035);
   P.tremor = Math.max(P.tremor, forte ? 7 : 3);
+  esp.aoAcertar(en, dano, crit, deEco);
+  if (!deEco && forte && h.atk && (h.atk.especial || h.combo === C.ataques.length - 1 || crit)) esp.impacto(x ?? en.x, y ?? en.y - en.h / 2, 1);
   const rouba = (C.rouba || 0) + h.mods.rouba;
   if (rouba > 0 && !h.caido) h.hp = Math.min(h.mhp, h.hp + dano * rouba);
   if (P.host) ferirInimigo(en, dano, kx, forte, true, lanca);
@@ -354,6 +358,8 @@ function matarInimigo(en) {
   }
   P.tremor = Math.max(P.tremor, en.tipo === 'chefe' ? 22 : 6);
   P.eu.mortos++;
+  esp.aoMatar(en);
+  if (en.elite || en.tipo === 'golem' || en.tipo === 'chefe') esp.impacto(cx, cy, 2);
   // tesouro (cada jogador ganha o seu)
   const valor = Math.round(d.cristais * (1 + 0.2 * (P.andar - 1)));
   const n = Math.min(8, valor);
@@ -375,6 +381,7 @@ function ferirHeroi(dano, kdir) {
   if (h.invT > 0) return;
   P.cmb.n = 0;
   dano = Math.max(1, Math.round(dano * h.mods.def));
+  esp.ganharEspecial(4);
   h.hp -= dano; h.invT = 0.85; h.feridoT = 0.22;
   h.vx = kdir * 280; h.vy = -280; h.atk = null;
   numero(h.x, h.y - h.h - 10, dano, '#ff5a7a', false);
@@ -391,7 +398,7 @@ function ferirHeroi(dano, kdir) {
 let vermelho = 0;
 function esquivaPerfeita() {
   const h = P.eu;
-  h.perfeitoUsado = true; h.critT = 1.8; h.invT = Math.max(h.invT, 0.6);
+  h.perfeitoUsado = true; h.critT = 1.8; h.invT = Math.max(h.invT, 0.6); esp.ganharEspecial(10);
   P.lentoT = 0.6;
   aviso('ESQUIVA PERFEITA', 'próximos golpes: crítico', 1300);
   P.fx.push({ tipo: 'anel', x: h.x, y: h.y - 45, t: 0, dur: 0.5, cor: '#ffffff', raio: 110 });
@@ -473,7 +480,7 @@ function atualizarEu(dt) {
 
   // rolar
   if (h.rolarT <= 0 && h.habT <= 0 && h.rolarCd <= 0 && consumir('rolar', 160)) {
-    h.rolarT = ROLAR; h.rolarCd = 0.45; h.perfeitoUsado = false; if (mx) h.d = mx; h.invT = Math.max(h.invT, 0.32); h.atk = null; som.rolar();
+    h.rolarT = ROLAR; h.rolarCd = 0.45; h.perfeitoUsado = false; esp.aoBlink(h.x, h.y); if (mx) h.d = mx; h.invT = Math.max(h.invT, 0.32); h.atk = null; som.rolar();
     efeitoBlink(h.x, h.y, CLASSES[h.classe].cor, h.classe);
   }
   // habilidade
@@ -485,6 +492,8 @@ function atualizarEu(dt) {
     for (let i = 0; i < 16; i++) P.parts.push({ x: h.x + (Math.random() - 0.5) * 30, y: h.y - Math.random() * 60, vx: 0, vy: -80 - Math.random() * 120, vida: 0.8, max: 0.8, cor: '#9fffb0', tam: 3, grav: 0 });
     atualizarBotoesHud();
   }
+  // especial
+  if (consumir('esp', 200)) { if (esp.soltarEspecial()) atualizarBotoesHud(); }
   // ataque carregado (segurar o botão): lançador nos guerreiros, orbe gigante nos magos
   h.critT = Math.max(0, (h.critT || 0) - dt);
   if (ctrl.segura.atacar && h.rolarT <= 0 && h.habT <= 0 && !h.cargaUsada) {
@@ -516,6 +525,9 @@ function atualizarEu(dt) {
   if (h.atk) {
     const at = h.atk, dur = at.dur / atkVel, ini = at.ini / atkVel, fim = at.fim / atkVel;
     h.atkT += dt;
+    // rastro de imagens fantasmas durante o golpe
+    P.fantT -= dt;
+    if (P.fantT <= 0 && h.atkT > ini * 0.5 && h.atkT < fim + 0.06) { P.fantT = 0.045; esp.fantasma(h.classe, h.sexo, calcularPose(h, P.t), h.x, h.y, h.d, C.cor, at.forte ? 0.3 : 0.2); }
     if (h.atkT >= ini && !h.corteFeito) {
       h.corteFeito = true;
       if (h.noChao && !at.lanca) h.vx += h.d * (at.forte ? 260 : 140);
@@ -653,6 +665,11 @@ function inimigoMaisPerto(h, raio, soFrente) {
   }
   return melhor;
 }
+esp.ligarEspetaculo({
+  P: () => P, golpear, som, impacto: esp.impacto, inimigoMaisPerto,
+  livre: (x, y) => !solido(P.nv, x, y - 20) && !solido(P.nv, x, y - 60),
+  enviarFx: tipo => { const h = P.eu; h.fxId++; h.fx = [h.fxId, tipo, Math.round(h.x), Math.round(h.y), h.d]; },
+});
 function efeitoBlink(x, y, cor, classe) {
   if (classe === 'mago') {
     // portal arcano: círculo de runas + faíscas de cristal azul e lilás
@@ -760,7 +777,8 @@ function atualizarOutros(dt) {
     if (st.fx && st.fx[0] !== o.fxId) {
       o.fxId = st.fx[0];
       const [, tipo, fx, fy, fd] = st.fx;
-      efeitoHab(tipo, fx, fy, fd, false);
+      if (tipo.startsWith('esp_')) esp.efeitoEspecial(tipo.slice(4), fx, fy, fd, false);
+      else efeitoHab(tipo, fx, fy, fd, false);
       if (tipo === 'luz' && Math.hypot(fx - P.eu.x, fy - P.eu.y) < 270) {
         const h = P.eu;
         if (h.caido) reviver(0.35);
@@ -931,6 +949,7 @@ function desenhar() {
   if (h.caido) {
     c.strokeStyle = '#ffe28a'; c.lineWidth = 4; c.beginPath(); c.arc(h.x, h.y - 50, 20, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (h.reviveT / 2)); c.stroke();
   }
+  esp.desenharMundo(c, t);
   // tiros do mago
   for (const s of P.tiros) {
     c.save(); c.globalCompositeOperation = 'lighter';
@@ -981,6 +1000,7 @@ function desenhar() {
   if (P.lentoT > 0) { c.fillStyle = `rgba(150,200,255,${Math.min(0.22, P.lentoT * 0.4)})`; c.fillRect(0, 0, cv.width, cv.height); }
   desenharVinheta(c);
   desenharHud(c);
+  esp.desenharTela(c, cv.width, cv.height, (x, y) => [(x - camX) * ESC, (y - camY) * ESC]);
 }
 function fimRelDe(st) { const C = CLASSES[st.c]; const at = C && C.ataques[st.cb || 0]; return at ? at.fim / at.dur : 0.6; }
 function desenharHeroiMundo(c, x, y, d, classe, sexo, pose, t, extra) {
@@ -1097,7 +1117,7 @@ function desenharHud(c) {
   c.save(); c.scale(s, s);
   const x = 14 + (TOQUE ? 6 : 0), y = 12;
   // vida
-  c.fillStyle = 'rgba(10,6,30,.7)'; roundRect(c, x, y, 230, 62, 12); c.fill();
+  c.fillStyle = 'rgba(10,6,30,.7)'; roundRect(c, x, y, 230, 76, 12); c.fill();
   c.strokeStyle = 'rgba(199,155,255,.5)'; c.lineWidth = 1.5; c.stroke();
   c.font = '800 13px Cinzel, serif'; c.fillStyle = '#e8d5ff'; c.textAlign = 'left';
   c.fillText(`${G.nome || 'Herói'} · ${nomeClasse(h.classe, h.sexo)}`, x + 10, y + 18);
@@ -1107,8 +1127,15 @@ function desenharHud(c) {
   c.fillStyle = gv; roundRect(c, x + 10, y + 26, Math.max(0.01, 210 * fr), 14, 7); c.fill();
   c.font = '800 11px Nunito, sans-serif'; c.fillStyle = '#fff'; c.textAlign = 'center';
   c.fillText(`${Math.ceil(h.hp)} / ${h.mhp}`, x + 115, y + 37);
-  c.textAlign = 'left'; c.font = '800 13px Nunito, sans-serif';
-  c.fillText(`🧪 ${h.pocoes}/${h.pocoesMax}   💎 ${h.cristais}`, x + 10, y + 56);
+  // barra do especial
+  const fe = clamp((h.esp || 0) / esp.ESP_MAX, 0, 1), cheio = fe >= 1;
+  c.fillStyle = '#1c1238'; roundRect(c, x + 10, y + 45, 210, 8, 4); c.fill();
+  const ge = c.createLinearGradient(x + 10, 0, x + 220, 0); ge.addColorStop(0, '#7c4dff'); ge.addColorStop(1, cheio ? '#ffe28a' : '#c79bff');
+  c.fillStyle = ge; roundRect(c, x + 10, y + 45, Math.max(0.01, 210 * fe), 8, 4); c.fill();
+  if (cheio) { c.save(); c.globalAlpha = 0.5 + 0.5 * Math.sin(P.t * 10); c.strokeStyle = '#ffe28a'; c.lineWidth = 2; roundRect(c, x + 9, y + 44, 212, 10, 5); c.stroke(); c.restore(); }
+  c.textAlign = 'left'; c.font = '800 13px Nunito, sans-serif'; c.fillStyle = '#fff';
+  c.fillText(`🧪 ${h.pocoes}/${h.pocoesMax}   💎 ${h.cristais}`, x + 10, y + 69);
+  if (cheio) { c.font = '900 12px Cinzel, serif'; c.fillStyle = '#ffe28a'; c.textAlign = 'right'; c.fillText(TOQUE ? 'ESPECIAL!' : 'ESPECIAL [U]', x + 220, y + 69); c.textAlign = 'left'; }
   // habilidade (no teclado)
   if (!TOQUE) {
     const hx = x + 240, hy = y + 4;
@@ -1119,7 +1146,7 @@ function desenharHud(c) {
     if (h.habCd > 0) { c.strokeStyle = C.cor; c.lineWidth = 3; c.beginPath(); c.arc(hx + 26, hy + 27, 24, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - h.habCd / (C.habCd * h.mods.cd))); c.stroke(); }
   }
   // aliados
-  let ay = y + 72;
+  let ay = y + 86;
   for (const o of Object.values(P.outros)) {
     const st = o.st;
     c.fillStyle = 'rgba(10,6,30,.6)'; roundRect(c, x, ay, 160, 22, 8); c.fill();
@@ -1217,6 +1244,8 @@ function passo(dt) {
   const jogando = G.meta && G.meta.status === 'jogando';
   P.status = jogando ? 'jogando' : G.meta?.status;
   // pausa curtinha do impacto (só o meu mundo)
+  const dtReal = dt;
+  if (P.cutin) dt *= 0.03;
   if (P.paraT > 0) { P.paraT -= dt; dt *= 0.08; }
   if (P.lentoT > 0) { P.lentoT -= dt; dt *= 0.32; }
   if (P.cmb.t > 0) { P.cmb.t -= dt; if (P.cmb.t <= 0) P.cmb.n = 0; }
@@ -1226,6 +1255,7 @@ function passo(dt) {
   if (jogando) atualizarEu(dt);
   if (P.host) simularHost(dt); else simularReplicas(dt);
   atualizarEfeitos(dt);
+  esp.atualizar(dt, dtReal);
   if (G.tela === null || G.tela === 'jogo') atualizarBotaoHab();
   // rede
   if (G.modo === 'sala') {
@@ -1266,6 +1296,8 @@ function vigiarHost(dt) {
 let ultCd = -1;
 function atualizarBotaoHab() {
   if (!TOQUE || !P) return;
+  const pe = clamp((P.eu.esp || 0) / esp.ESP_MAX, 0, 1);
+  const be = $('#bEsp'); be.style.setProperty('--carga', pe); be.classList.toggle('pronto', pe >= 1);
   const h = P.eu, C = CLASSES[h.classe];
   const v = h.habCd > 0 ? Math.round(h.habCd / (C.habCd * h.mods.cd) * 40) / 40 : 0;
   if (v !== ultCd) { ultCd = v; $('#bHab').style.setProperty('--cd', v); }
@@ -1295,7 +1327,11 @@ function abrirAltar(andar) {
   h.pocoes = h.pocoesMax;
   som.portal();
   const r = rng(Date.now());
-  const ops = [...BENCAOS].sort(() => r() - 0.5).slice(0, 3);
+  if (!h.ecos) h.ecos = {};
+  const ecos = esp.ECOS.filter(e => (h.ecos[e.id] || 0) < 3).map(e => ({ ...e, txt: h.ecos[e.id] ? `${e.txt} — nível ${h.ecos[e.id] + 1}` : e.txt, f: hh => { hh.ecos[e.id] = (hh.ecos[e.id] || 0) + 1; } }));
+  const ecoSorteado = ecos.sort(() => r() - 0.5).slice(0, 1);
+  const resto = [...BENCAOS, ...ecos.filter(e => !ecoSorteado.includes(e))].sort(() => r() - 0.5).slice(0, 2);
+  const ops = [...ecoSorteado, ...resto].sort(() => r() - 0.5);
   const box = $('#bencaos'); box.innerHTML = '';
   $('#altarSub').textContent = `Antes do andar ${andar}${ehChefe(andar) ? ' — o chefe espera!' : ''} · escolha uma bênção`;
   $('#altarEspera').textContent = '';
@@ -1357,6 +1393,8 @@ $('#bPausa').onclick = pausar;
 addEventListener('keydown', e => { if (e.code === 'Escape' || e.code === 'KeyP') { if (G.tela === 'telaPausa') continuar(); else if (P && (G.tela === null || G.tela === 'jogo')) pausar(); } });
 function continuar() { G.pausado = false; mostrar(null); ultimo = performance.now(); }
 $('#bContinuarPausa').onclick = continuar;
+$('#bFlashes').textContent = esp.config.flashes ? '⚡ Flashes de impacto: ligados' : '⚡ Flashes de impacto: desligados';
+$('#bFlashes').onclick = () => { const on = esp.alternarFlashes(); $('#bFlashes').textContent = on ? '⚡ Flashes de impacto: ligados' : '⚡ Flashes de impacto: desligados'; };
 $('#bSom').onclick = () => { const on = alternarSom(); $('#bSom').textContent = on ? '🔊 Som ligado' : '🔇 Som desligado'; };
 $('#bDesistir').onclick = () => irMenu();
 

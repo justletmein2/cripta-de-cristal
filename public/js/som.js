@@ -119,6 +119,19 @@ export const som = {
   },
   marcoCombo: (n) => { const base = n >= 50 ? 1568 : n >= 35 ? 1318 : n >= 20 ? 1175 : 1046; [0, 4, 7, 12].forEach((s, i) => sino(base * Math.pow(2, s / 12), 0.8, 0.05, i * 0.05)); },
   emboscada: () => { tom(55, 1.0, { tipo: 'sawtooth', vol: 0.18, ate: 40, rev: 0.6 }); ruido(0.8, { vol: 0.2, de: 200, ate: 2000, q: 0.8, ataque: 0.3, rev: 0.7 }); },
+  // corte de cena do especial: sucção + coral
+  especial: () => {
+    ruido(0.7, { vol: 0.35, de: 200, ate: 6000, q: 0.9, ataque: 0.5, rev: 0.6 });
+    [0, 3, 7, 12].forEach((s, i) => tom(220 * Math.pow(2, s / 12), 1.2, { tipo: 'sawtooth', vol: 0.04, ataque: 0.25, atraso: i * 0.03, rev: 0.8 }));
+    sino(1760, 1.6, 0.08, 0.6, 0.9);
+  },
+  especialSolto: (cl) => {
+    tom(60, 0.9, { vol: 0.6, ate: 25, rev: 0.4 });
+    ruido(0.9, { vol: 0.4, de: 6000, ate: 200, q: 0.6, rev: 0.7 });
+    if (cl === 'mago' || cl === 'padre') [0, 4, 7, 11, 14].forEach((s, i) => sino(880 * Math.pow(2, s / 12), 1.6, 0.06, i * 0.07));
+    else for (let i = 0; i < 4; i++) ruido(0.2, { vol: 0.3, de: 4000, ate: 600, q: 1.2, atraso: 0.3 + i * 0.1, ataque: 0.02 });
+  },
+  raio: () => { ruido(0.18, { vol: 0.3, de: 8000, ate: 2000, q: 0.5, rev: 0.3 }); tom(var_(1200), 0.12, { tipo: 'square', vol: 0.04, ate: 300 }); },
   cura: () => [523, 659, 784, 1046].forEach((f, i) => sino(f, 1.0, 0.07, i * 0.08)),
   portal: () => [392, 523, 659, 784, 1046].forEach((f, i) => sino(f, 1.4, 0.07, i * 0.07)),
   bencao: () => [659, 784, 988, 1318].forEach((f, i) => sino(f, 1.6, 0.08, i * 0.1)),
