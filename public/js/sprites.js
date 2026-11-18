@@ -17,7 +17,7 @@ const DEFS = {
     combo: [['atk1', 6, 10, 11], ['atk1', 11, 8, 7], ['atk1', 7, 10, 16]] },   // desce, sobe (golpe de volta), desce forte
   // Vampira (vídeo do Flow): garras pra frente, garras pra cima, giro com a perna
   // Vampiro (vídeo do Flow, sem o sabre e as kunais): estica o braço pra lançar o sangue
-  vampiro_m: { ponta: [72, -86], pulo: [0, 2, 4, 6, 8, 10, 12, 14, 16], golpe: { atk1: 4 }, combo: [['atk1', 0, 3, 7], ['atk1', 1, 4, 9], ['atk1', 0, 3, 13]], semFerido: true, vaivem: true },
+  vampiro_m: { ponta: [72, -86], pulo: [0, 1, 2, 3, 4, 5, 6, 7, 8], golpe: { atk1: 4 }, combo: [['atk1', 0, 3, 7], ['atk1', 1, 4, 9], ['atk1', 0, 3, 13]], semFerido: true, vaivem: true },
   vampiro_f: { ponta: [58, -80], pulo: [0, 1, 2, 3, 4, 5, 6], golpe: { atk1: 6 }, combo: [['atk1', 1, 5, 8], ['atk1', 8, 17, 18], ['atk2', 0, 4, 14]], semFerido: true, vaivem: true },
 };
 
@@ -58,7 +58,7 @@ function quadro(nome, src, t) {
   if (a === 'hab') return um('atk1', d.golpe.atk1);
   if (a === 'ferido') return d.semFerido ? um('parado', 0) : um('ferido', (src.fase || 0) * 99);
   if (a === 'caido') return um('morrer', 999);
-  if (d.vaivem) { const n = nQuadros(nome, 'parado'), k = Math.floor(t * 9) % (2 * n - 2); return um('parado', k < n ? k : 2 * n - 2 - k); }
+  if (d.vaivem && nQuadros(nome, 'parado') > 1) { const n = nQuadros(nome, 'parado'), k = Math.floor(t * 9) % (2 * n - 2); return um('parado', k < n ? k : 2 * n - 2 - k); }
   return um('parado', Math.floor(t * 12));
 }
 const nQuadros = (nome, anim) => cache[nome].meta.anims[anim].n;
@@ -75,6 +75,7 @@ export function desenharSprite(c, classe, sexo, src, t, alpha = 1) {
   c.save();
   c.globalAlpha *= alpha;
   if (src.anim === 'ferido' && DEFS[nome].semFerido) c.rotate(-0.18);
+  if (anim === 'parado' && m.n === 1) c.scale(1, 1 + 0.012 * Math.sin(t * 2.6));   // pose única: só respira
   // luz suave atrás, pra arte não sumir no fundo escuro
   if (luz) { c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha *= 0.35; c.drawImage(luz, -60, -130, 120, 140); c.restore(); }
   c.drawImage(s.img, sx, sy, m.w, m.h, m.ox * k, m.oy * k, m.w * k, m.h * k);
