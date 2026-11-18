@@ -12,7 +12,7 @@ export function alternarFlashes() { config.flashes = !config.flashes; localStora
 
 // ---------- retratos pro corte de cena ----------
 const retratos = {};
-for (const n of ['cavaleiro_f', 'cavaleiro_m']) { const i = new Image(); i.src = `sprites/retrato_${n}.webp`; retratos[n] = i; }
+for (const n of ['cavaleiro_f', 'cavaleiro_m', 'mago_f']) { const i = new Image(); i.src = `sprites/retrato_${n}.webp`; retratos[n] = i; }
 
 // ---------- quadro de impacto ----------
 let ultimoImpacto = 0;
@@ -366,7 +366,7 @@ function desenharCutin(c, W, H, ci) {
   c.restore();
   let tam = Math.round(H * 0.1);
   c.font = `900 ${tam}px Cinzel, serif`;
-  const caber = W * 0.56; const mw = c.measureText(ci.nome).width; if (mw > caber) { tam = Math.floor(tam * caber / mw); c.font = `900 ${tam}px Cinzel, serif`; }
+  const caber = W * 0.44; const mw = c.measureText(ci.nome).width; if (mw > caber) { tam = Math.floor(tam * caber / mw); c.font = `900 ${tam}px Cinzel, serif`; }
   c.textAlign = 'left'; c.lineWidth = 8; c.strokeStyle = '#140d22';
   c.strokeText(ci.nome, W * 0.0, bh * 0.08); c.fillStyle = '#ffffff'; c.fillText(ci.nome, W * 0.0, bh * 0.08);
   c.font = `800 ${Math.round(H * 0.04)}px Cinzel, serif`; c.fillStyle = '#ffe28a'; c.fillText('ESPECIAL', W * 0.0, -bh * 0.18);
