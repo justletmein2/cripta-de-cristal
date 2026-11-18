@@ -1525,7 +1525,7 @@ function desenharPreviews(t) {
   document.querySelectorAll('#cartas canvas').forEach(cvs => {
     const c = cvs.getContext('2d'), k = cvs.dataset.k;
     c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cvs.width, cvs.height);
-    const ret = esp.retratoDe(k, G.sexo);
+    const ret = esp.retratoDe(k, G.sexo, true);
     if (ret) { c.drawImage(ret, 95, 20, 250, 250, 0, 0, cvs.width, cvs.height); return; }
     c.setTransform(2.3, 0, 0, 2.3, 120, 224);
     desenharHeroi(c, k, G.sexo, calcularPose({ anim: 'parado', classe: k }, t + ORDEM.indexOf(k)), t, {});
@@ -1545,7 +1545,7 @@ function desenharPreviews(t) {
   c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cvs.width, cvs.height);
   c.save(); c.globalCompositeOperation = 'lighter';
   c.drawImage(brilho(rgba(C.cor, 0.45), 96), 120, 120, 480, 480); c.restore();
-  const ret = esp.retratoDe(G.classe, G.sexo);
+  const ret = esp.retratoDe(G.classe, G.sexo, true);
   if (ret) {
     // retrato desenhado: flutua de leve, sem pixelar
     const ph = cvs.height * 0.98, pw = ph * ret.naturalWidth / ret.naturalHeight;
@@ -1560,7 +1560,7 @@ function desenharMiniaturas(t) {
   document.querySelectorAll('#listaJogadores canvas').forEach(cvs => {
     const c = cvs.getContext('2d');
     c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, 96, 96);
-    const ret = esp.retratoDe(cvs.dataset.classe || 'cavaleiro', cvs.dataset.sexo);
+    const ret = esp.retratoDe(cvs.dataset.classe || 'cavaleiro', cvs.dataset.sexo, true);
     if (ret) { c.drawImage(ret, 95, 20, 250, 250, 0, 0, 96, 96); return; }
     c.setTransform(1, 0, 0, 1, 48, 92);
     desenharHeroi(c, cvs.dataset.classe || 'cavaleiro', cvs.dataset.sexo, calcularPose({ anim: 'parado' }, t), t, {});

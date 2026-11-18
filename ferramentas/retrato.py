@@ -1,5 +1,6 @@
 """Recorta um retrato (peito pra cima) de imagem com fundo preto, no padrão 440x470 do corte de cena.
-uso: python3 ferramentas/retrato.py <imagem> <saida.webp> x0 y0 x1 y1"""
+uso: python3 ferramentas/retrato.py <imagem> <saida.webp> x0 y0 x1 y1 [limiar=34]
+(fundo preto puro + roupa escura: use limiar baixo, ex. 8)"""
 import sys
 from PIL import Image
 import numpy as np, cv2
@@ -8,16 +9,17 @@ x0, y0, x1, y1 = map(int, sys.argv[3:7])
 im = Image.open(src).convert('RGB')
 c = np.array(im.crop((x0, y0, x1, y1)).resize((440, 470), Image.LANCZOS))
 m = c.max(axis=2).astype(np.float32)
-T = 34
+T = int(sys.argv[7]) if len(sys.argv) > 7 else 34
+B = max(2, T * 0.4)
 n, lab = cv2.connectedComponents((m < T).astype(np.uint8), connectivity=4)
 borda = set(np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))) - {0}
 bg = np.isin(lab, list(borda))
 # buracos pretos grandes e bem escuros (vãos entre cabelo/capa e corpo)
 n2, l2, st, _ = cv2.connectedComponentsWithStats((m < 20).astype(np.uint8), connectivity=4)
-for i in range(1, n2):
+for i in range(1, n2 if T >= 20 else 1):
     if st[i][4] >= 400: bg |= (l2 == i)
 a = np.full(m.shape, 255, np.float32)
-a[bg] = np.clip((m[bg] - 14) / (T - 14), 0, 1) * 255
+a[bg] = np.clip((m[bg] - B) / (T - B), 0, 1) * 255
 a = cv2.GaussianBlur(a, (3, 3), 0)
 h, w = a.shape
 f = np.ones(h); f[-80:] = np.linspace(1, 0, 80); a *= f[:, None]

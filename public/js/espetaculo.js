@@ -12,8 +12,14 @@ export function alternarFlashes() { config.flashes = !config.flashes; localStora
 
 // ---------- retratos pro corte de cena ----------
 const retratos = {};
-export function retratoDe(classe, sexo) { const r = retratos[`${classe}_${sexo === 'f' ? 'f' : 'm'}`]; return r && r.complete && r.naturalWidth ? r : null; }
-for (const n of ['cavaleiro_f', 'cavaleiro_m', 'mago_f', 'mago_m']) { const i = new Image(); i.src = `sprites/retrato_${n}.webp`; retratos[n] = i; }
+const pronto = r => (r && r.complete && r.naturalWidth ? r : null);
+export function retratoDe(classe, sexo, escolha = false) {
+  const n = `${classe}_${sexo === 'f' ? 'f' : 'm'}`;
+  return (escolha && pronto(retratos['sel_' + n])) || pronto(retratos[n]);
+}
+for (const n of ['cavaleiro_f', 'cavaleiro_m', 'mago_f', 'mago_m', 'vampiro_f']) { const i = new Image(); i.src = `sprites/retrato_${n}.webp`; retratos[n] = i; }
+// retratos próprios da tela de escolha (quando diferentes do especial)
+for (const n of ['vampiro_f']) { const i = new Image(); i.src = `sprites/retrato_sel_${n}.webp`; retratos['sel_' + n] = i; }
 
 // ---------- quadro de impacto ----------
 let ultimoImpacto = 0;
