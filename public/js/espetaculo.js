@@ -38,7 +38,7 @@ export function fantasma(classe, sexo, pose, x, y, d, cor, vida = 0.25) {
 }
 
 // ---------- especial ----------
-const ESPECIAIS = {
+export const ESPECIAIS = {
   cavaleiro: { nome: 'CORTE ASTRAL', cor: 'rgba(110,170,255,.95)' },
   mago: { nome: 'JULGAMENTO PRISMÁTICO', cor: 'rgba(170,110,255,.95)' },
   vampiro: { nome: 'BANQUETE RUBRO', cor: 'rgba(200,30,60,.95)' },

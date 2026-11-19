@@ -11,6 +11,7 @@ import { som, iniciarSom, musica, alternarSom } from './som.js';
 import * as rede from './rede.js';
 import { carregarSprites, pontaArma } from './sprites.js';
 import * as esp from './espetaculo.js';
+import * as trilho from './trilho.js';
 carregarSprites(['cavaleiro_m', 'cavaleiro_f', 'mago_f', 'mago_m', 'vampiro_f', 'vampiro_m']);
 
 const $ = s => document.querySelector(s);
@@ -40,6 +41,7 @@ const G = {
   nome: localStorage.getItem('cc_nome') || '',
   tela: 'inicio', heroi: null, run: null, rede: { estado: {}, inimigos: null, golpes: {} },
   pausado: false, altarAndar: -1, hostAusenteT: 0,
+  jogoModo: localStorage.getItem('cc_modo') || 'trilho',   // 'trilho' (fliperama de mira) ou 'classico' (plataforma)
 };
 let P = null;                         // partida (andar atual)
 const uidSolo = 'eu';
@@ -51,8 +53,10 @@ function mostrar(id) {
   if (id) $('#' + id).classList.add('ativa');
   G.tela = id || 'jogo';
   const jogando = !id || ['telaAltar', 'telaFim', 'telaPausa'].includes(id);
-  $('#hud').classList.toggle('escondido', !jogando || !P);
-  document.body.classList.toggle('jogando', jogando && !!P);
+  const emPartida = !!P || trilho.ativo();
+  $('#hud').classList.toggle('escondido', !jogando || !emPartida);
+  document.body.classList.toggle('jogando', jogando && emPartida);
+  document.body.classList.toggle('trilho', trilho.ativo());
 }
 let avisoTimer = null;
 function aviso(txt, sub = '', ms = 2600) {
@@ -156,7 +160,7 @@ function prepararArte() {
   P.interior = inter;
 }
 function pararPartida() {
-  P = null; musica(false);
+  P = null; musica(false); trilho.parar(); document.body.classList.remove('trilho');
   if (G.sairPartida) { G.sairPartida(); G.sairPartida = null; }
 }
 
@@ -179,9 +183,12 @@ function aoMeta(m) {
   if (P) P.host = souHost();
   if (m.run && m.run !== G.run) { G.run = m.run; G.heroi = criarHeroi(G.classe, G.sexo); }
   if (m.status === 'lobby') {
-    if (P) pararPartida();
+    if (P || trilho.ativo()) pararPartida();
     if (G.modo === 'sala' && !['telaSala', 'telaHeroi'].includes(G.tela)) mostrar('telaSala');
     atualizarSala();
+  } else if (m.status === 'jogando' && m.modo === 'trilho') {
+    if (trilho.runAtual() !== m.run) iniciarTrilho(m);
+    else if (G.tela !== 'telaPausa') mostrar(null);
   } else if (m.status === 'jogando') {
     if (!G.heroi) G.heroi = criarHeroi(G.classe, G.sexo);
     if (!P || P.andar !== m.andar || P.semente !== m.semente) {
@@ -196,9 +203,28 @@ function aoMeta(m) {
     mostrarFim(true);
   }
   if (P && antes && antes.host !== m.host && P.host) virarHost();
+  if (trilho.ativo() && antes && antes.host !== m.host && souHost()) trilho.virarHost();
+}
+// modo trilho: monta a lista de jogadores e liga a rede
+function iniciarTrilho(m) {
+  pararPartida();
+  const jogadores = G.modo === 'solo'
+    ? [{ uid: uidSolo, classe: G.classe, sexo: G.sexo, nome: G.nome || 'Herói' }]
+    : jogadoresOnline().map(u => ({ uid: u, classe: G.players[u].classe || 'cavaleiro', sexo: G.players[u].sexo || 'm', nome: G.players[u].name || 'Herói' }));
+  if (G.modo === 'sala' && !G.sairPartida) G.sairPartida = rede.ouvirPartida(G.codigo, aoRede);
+  trilho.iniciar({
+    mudarMeta, aviso,
+    emJogo: () => G.tela === 'jogo',
+    enviarEstado: e => rede.enviarEstado(G.codigo, e).catch(() => {}),
+    enviarInimigos: f => rede.enviarInimigos(G.codigo, f).catch(() => {}),
+    enviarGolpe: (n, g) => rede.enviarGolpe(G.codigo, n, g).catch(() => {}),
+    apagarGolpe: n => rede.apagarGolpe(G.codigo, n).catch(() => {}),
+  }, { run: m.run, semente: m.semente, jogadores, eu: meuUid(), host: souHost(), solo: G.modo === 'solo' });
+  mostrar(null);
 }
 function aoRede(st, k) {
   G.rede = st;
+  if (trilho.ativo()) { trilho.aoRede(st, k); return; }
   if (!P) return;
   if (k === 'inimigos' && !P.host) receberInimigos(st.inimigos);
   if (k === 'golpes' && P.host) aplicarGolpesRemotos(st.golpes);
@@ -1293,8 +1319,14 @@ function quadro(agoraMs) {
   requestAnimationFrame(quadro);
   let dt = Math.min(1 / 30, (agoraMs - ultimo) / 1000);
   ultimo = agoraMs;
-  if (P && !(G.modo === 'solo' && G.pausado)) passo(dt);
-  desenhar();
+  if (trilho.ativo()) {
+    if (!(G.modo === 'solo' && G.pausado)) trilho.passo(dt);
+    trilho.desenhar(ctx, cv.width, cv.height, DPR);
+    if (G.modo === 'sala') vigiarHost(dt);
+  } else {
+    if (P && !(G.modo === 'solo' && G.pausado)) passo(dt);
+    desenhar();
+  }
   if (G.tela === 'telaHeroi') desenharPreviews(agoraMs / 1000);
   if (G.tela === 'telaSala') desenharMiniaturas(agoraMs / 1000);
 }
@@ -1425,6 +1457,19 @@ function mostrarFim(vitoria) {
   if (G.tela === 'telaFim') return;
   const h = G.heroi;
   musica(false);
+  const rs = trilho.resumo();
+  if (rs) {
+    $('#fimTitulo').textContent = vitoria ? 'Vitória!' : 'Fim da jornada';
+    $('#fimTexto').textContent = vitoria ? 'O Guardião do Prisma caiu!' : (G.modo === 'solo' ? 'Você caiu…' : 'Todo o grupo caiu…');
+    $('#fimStats').innerHTML = `<span>Fase ${rs.fase} · ${rs.nomeFase}</span><span>👹 ${rs.mortos}</span><span>🙋 ${rs.salvos} salvos</span><span>⭐ ${rs.placar}</span>`;
+    $('#bContinuar').hidden = true;
+    const host = souHost();
+    $('#bDeNovo').hidden = !host;
+    $('#fimEspera').textContent = host ? '' : 'Esperando o anfitrião decidir…';
+    mostrar('telaFim');
+    if (vitoria) som.bencao(); else som.morte();
+    return;
+  }
   $('#fimTitulo').textContent = vitoria ? 'Vitória!' : 'Fim da jornada';
   $('#fimTexto').textContent = vitoria ? 'O Guardião do Prisma caiu. Dá pra continuar descendo — fica mais difícil!' : (G.modo === 'solo' ? 'Você caiu na cripta…' : 'Todo o grupo caiu na cripta…');
   $('#fimStats').innerHTML = `<span>Andar ${P ? P.andar : G.meta.andar}</span><span>👹 ${h ? h.mortos : 0} monstros</span><span>💎 ${h ? h.cristais : 0} cristais</span>`;
@@ -1444,13 +1489,13 @@ $('#bMenu').onclick = () => irMenu();
 
 // ---------- pausa ----------
 function pausar() {
-  if (!P || G.tela === 'telaAltar' || G.tela === 'telaFim') return;
+  if ((!P && !trilho.ativo()) || G.tela === 'telaAltar' || G.tela === 'telaFim') return;
   G.pausado = true;
   $('#pausaAviso').textContent = G.modo === 'sala' ? 'Com amigos o jogo continua rolando!' : '';
   mostrar('telaPausa');
 }
 $('#bPausa').onclick = pausar;
-addEventListener('keydown', e => { if (e.code === 'Escape' || e.code === 'KeyP') { if (G.tela === 'telaPausa') continuar(); else if (P && (G.tela === null || G.tela === 'jogo')) pausar(); } });
+addEventListener('keydown', e => { if (e.code === 'Escape' || e.code === 'KeyP') { if (G.tela === 'telaPausa') continuar(); else if ((P || trilho.ativo()) && (G.tela === null || G.tela === 'jogo')) pausar(); } });
 function continuar() { G.pausado = false; mostrar(null); ultimo = performance.now(); }
 $('#bContinuarPausa').onclick = continuar;
 $('#bFlashes').textContent = esp.config.flashes ? '⚡ Flashes de impacto: ligados' : '⚡ Flashes de impacto: desligados';
@@ -1470,12 +1515,21 @@ $('#nome').addEventListener('input', e => { G.nome = e.target.value.trim().slice
 let depoisDoHeroi = null;
 function escolherHeroi(depois) { depoisDoHeroi = depois; montarCartas(); mostrar('telaHeroi'); }
 
-$('#bSolo').onclick = () => { iniciarSom(); escolherHeroi(() => comecarSolo()); };
+$('#bSolo').onclick = () => {
+  iniciarSom();
+  escolherHeroi(() => {
+    if (G.jogoModo === 'trilho' && G.classe === 'padre') { aviso(G.sexo === 'f' ? 'A Freira não ataca' : 'O Padre não ataca', 'No modo trilho, ele(a) só cura: jogue com um amigo (Criar sala) ou escolha outro herói.', 4200); return; }
+    comecarSolo();
+  });
+};
+function atualizarBotaoModo() { $('#bModo').innerHTML = G.jogoModo === 'trilho' ? '🎯 Modo: <b>Trilho</b> (mira, novo)' : '🗺️ Modo: <b>Clássico</b> (plataforma)'; }
+$('#bModo').onclick = () => { G.jogoModo = G.jogoModo === 'trilho' ? 'classico' : 'trilho'; localStorage.setItem('cc_modo', G.jogoModo); atualizarBotaoModo(); };
+atualizarBotaoModo();
 function comecarSolo() {
   pararPartida();
   G.modo = 'solo'; G.altarAndar = -1; G.pausado = false;
   G.meta = { host: uidSolo, status: 'lobby', andar: 1 };
-  mudarMeta({ status: 'jogando', andar: 1, semente: Number(params.get('semente')) || novaSemente(), run: Date.now() });
+  mudarMeta({ status: 'jogando', andar: 1, semente: Number(params.get('semente')) || novaSemente(), run: Date.now(), modo: params.get('modo') || G.jogoModo });
 }
 $('#bCriar').onclick = async () => {
   iniciarSom();
@@ -1538,7 +1592,7 @@ function atualizarSala() {
 }
 $('#bComecar').onclick = () => {
   rede.limparPartida(G.codigo).catch(() => {});
-  mudarMeta({ status: 'jogando', andar: 1, semente: novaSemente(), run: Date.now() });
+  mudarMeta({ status: 'jogando', andar: 1, semente: novaSemente(), run: Date.now(), modo: G.jogoModo });
 };
 $('#bTrocarHeroi').onclick = () => escolherHeroi(() => { rede.atualizarEu(G.codigo, publico()); mostrar('telaSala'); atualizarSala(); });
 $('#bSairSala').onclick = () => irMenu();

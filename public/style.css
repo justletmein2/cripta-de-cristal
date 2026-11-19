@@ -113,3 +113,7 @@ body.touch .toque { display: block; }
 .bEsp { right: 196px; bottom: 140px; width: 54px; height: 54px; font-size: 12px; font-family: Cinzel, serif; background: conic-gradient(rgba(199,155,255,.85) calc(var(--carga, 0) * 1turn), rgba(20,10,50,.55) 0); }
 .bEsp.pronto { background: radial-gradient(circle at 35% 30%, #fff3b0, #e8a93a); color: #2a1600; box-shadow: 0 0 18px #ffe28a; animation: pulsar .6s infinite alternate; }
 @keyframes pulsar { to { transform: scale(1.08); } }
+
+/* modo trilho: sem joystick nem botões de ação (o jogo é no dedo, direto na tela) */
+body.trilho #toque { display: none !important; }
+#bModo { margin-top: 4px; }

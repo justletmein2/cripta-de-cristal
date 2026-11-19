@@ -1,5 +1,5 @@
 """Recorta um retrato (peito pra cima) de imagem com fundo preto, no padrão 440x470 do corte de cena.
-uso: python3 ferramentas/retrato.py <imagem> <saida.webp> x0 y0 x1 y1 [limiar=34]
+uso: python3 ferramentas/retrato.py <imagem> <saida.webp> x0 y0 x1 y1 [limiar=34] [largura altura]
 (fundo preto puro + roupa escura: use limiar baixo, ex. 8)"""
 import sys
 from PIL import Image
@@ -7,7 +7,8 @@ import numpy as np, cv2
 src, saida = sys.argv[1], sys.argv[2]
 x0, y0, x1, y1 = map(int, sys.argv[3:7])
 im = Image.open(src).convert('RGB')
-c = np.array(im.crop((x0, y0, x1, y1)).resize((440, 470), Image.LANCZOS))
+OW, OH = (int(sys.argv[8]), int(sys.argv[9])) if len(sys.argv) > 9 else (440, 470)
+c = np.array(im.crop((x0, y0, x1, y1)).resize((OW, OH), Image.LANCZOS))
 m = c.max(axis=2).astype(np.float32)
 T = int(sys.argv[7]) if len(sys.argv) > 7 else 34
 B = max(2, T * 0.4)
