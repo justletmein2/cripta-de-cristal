@@ -105,6 +105,15 @@ export const som = {
     ruido(0.5, { vol: 0.2, de: 3000, ate: 700, q: 1.5, atraso: 0.12, rev: 0.3 });
     tom(var_(90), 0.55, { tipo: 'sawtooth', vol: 0.12, ate: 42, rev: 0.4 });
   },
+  explosao: () => {
+    ruido(0.06, { vol: 0.7, de: 6000, ate: 2000, q: 0.5, rev: 0.2 });
+    ruido(1.2, { vol: 0.6, de: 700, ate: 40, q: 0.5, tipo: 'lowpass', ataque: 0.01, rev: 0.7 });
+    tom(48, 0.9, { tipo: 'sine', vol: 0.4, ate: 25, rev: 0.4 });
+  },
+  disparoInimigo: () => {
+    ruido(0.09, { vol: 0.35, de: 3500, ate: 900, q: 0.8, rev: 0.25 });
+    tom(var_(160), 0.12, { tipo: 'square', vol: 0.06, ate: 70, rev: 0.2 });
+  },
   crepita: () => ruido(0.05, { vol: 0.06, de: var_(3200, 0.3), ate: 1500, q: 2, rev: 0.1 }),
   magia: () => {
     tom(var_(660), 0.35, { tipo: 'sine', vol: 0.12, ate: 1320, rev: 0.6 });

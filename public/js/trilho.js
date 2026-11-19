@@ -33,7 +33,7 @@ export const DICA = {
 };
 const COR_JOG = ['#5ee0ff', '#ff6fb5', '#ffd84a', '#7dff8a'];
 const ESTS = ['anda', 'prepara', 'golpe', 'recupera', 'atordoado', 'morto', 'espera'];
-const PAPEIS = ['perto', 'longe', 'captor'];
+const PAPEIS = ['perto', 'longe', 'captor', 'atirador'];
 const ATAQUES = ['rajada', 'investida', 'invocar', 'duplo', 'arremesso'];
 const PROJ = ['orbe', 'osso', 'adaga', 'garrafa', 'fogo'];
 const REF_E = ['preso', 'livre', 'morto', 'salvo'];
@@ -77,7 +77,7 @@ export function iniciar(api, cfg) {
     ultimaFoto: 0, fim: null, mortos: 0, salvos: 0, perdidos: 0,
   };
   R.bioma = FASES[0].bioma;
-  R.camD = 0; R.lat = 0; R.props = gerarProps(0);
+  R.camD = 0; R.lat = 0; R.props = gerarProps(0); R.fxExplodidos = new Set(); R.explodidos = new Set(); R.coberturas = new Set(); R.emboscadas = new Set();
   if (R.host) montarFase(0);
   ligarEntrada();
   musica(true);
@@ -108,7 +108,7 @@ function gerarSeq(f) {
 }
 function montarFase(f) {
   R.fase = f; R.bioma = FASES[f].bioma; R.seq = gerarSeq(f); R.seg = 0; R.segT = 0;
-  R.camD = 0; R.props = gerarProps(f);
+  R.camD = 0; R.props = gerarProps(f); R.fxExplodidos = new Set(); R.explodidos = new Set(); R.coberturas = new Set(); R.emboscadas = new Set();
   R.estado = 'viagem'; R.ini.clear(); R.proj.clear(); R.ref.clear(); R.ondas = []; R.fila = [];
   R.rnd = rng(R.semente * 31 + f * 977);
 }
@@ -120,7 +120,9 @@ function alvoAleatorio() { const v = vivosIdx(); return v.length ? v[Math.floor(
 function criarInimigoT(tipo, papel, opt = {}) {
   const d = DEFS[tipo];
   const elite = !!opt.elite;
-  const vida = Math.round((opt.duelo === 'chefe' ? 950 : opt.duelo === 'mini' ? 480 : d.vida * 0.75 * (elite ? 3 : 1)) * multVida());
+  // capangas morrem com 1-2 acertos (estilo Virtua Cop); elites e pesados aguentam mais
+  const base = opt.duelo === 'chefe' ? 950 : opt.duelo === 'mini' ? 480 : elite ? d.vida * 2.2 : papel === 'atirador' ? 18 : d.pesado ? 45 : 26;
+  const vida = Math.round(base * multVida());
   const id = R.novoId++;
   const en = {
     id, tipo, papel, elite, X: opt.X ?? (R.rnd() * 2.2 - 1.1), z: opt.z ?? (1.55 + R.rnd() * 0.35), hp: vida, mhp: vida,
@@ -130,7 +132,9 @@ function criarInimigoT(tipo, papel, opt = {}) {
     vel: tipo === 'escaravelho' ? 0.5 : (d.pesado ? 0.13 : 0.2) * (VOAM.includes(tipo) ? 1.4 : 1),
     pesado: !!d.pesado || elite || !!opt.duelo,
     duelo: opt.duelo || null, post: 0, vulnT: 0, pontos: [], pontoT: 2.5, ciclo: 0,
+    alt: opt.alt || 0, cobX: opt.cobX ?? null, sai: opt.sai ?? null, cob: opt.cob || 0,
   };
+  if (papel === 'atirador') { en.estado = 'espera'; en.cd = 0.3 + R.rnd() * 1.2; en.zAlvo = en.z; en.exp = 0; }
   // onde ele para: sempre dentro da tela (perto da câmera a tela "estreita")
   const lim = Math.min(1.1, 1.25 * en.zAlvo);
   en.Xalvo = papel === 'captor' ? en.X : (R.rnd() * 2 - 1) * lim;
@@ -142,20 +146,57 @@ function proximaOnda(segm, k) {
   const tipos = tiposDoTema(tema, R.fase + 1);
   const tot = tipos.reduce((a, b) => a + b[1], 0);
   const sortear = () => { let v = R.rnd() * tot; for (const [t, p] of tipos) if ((v -= p) < 0) return t; return tipos[0][0]; };
-  const n = Math.round(2 + R.fase * 0.7 + k + (nJog() - 1) * 1.5);
+  const n = Math.round(4 + R.fase * 0.8 + k * 1.5 + (nJog() - 1) * 2);
   for (let i = 0; i < n; i++) {
     const tipo = sortear();
     let papel = 'perto';
-    if (tipo === 'conjurador') papel = 'longe';
-    else if (tipo === 'esqueleto' && R.rnd() < 0.35) papel = 'longe';
-    else if (tipo === 'assassino' && R.rnd() < 0.4) papel = 'longe';
-    R.fila.push({ t: i * (0.55 + R.rnd() * 0.5), tipo, papel });
+    if (tipo === 'conjurador') papel = R.rnd() < 0.5 ? 'longe' : 'atirador';
+    else if (!VOAM.includes(tipo) && !DEFS[tipo].pesado && tipo !== 'escaravelho' && R.rnd() < 0.6) papel = 'atirador';
+    R.fila.push({ t: i * (0.35 + R.rnd() * 0.4), tipo, papel });
   }
   if (segm.refem && k === 0) {
     const nr = nJog() > 1 ? 2 : 1;
     for (let i = 0; i < nr; i++) R.fila.push({ t: 0.2 + i * 0.6, refem: true });
   }
   if (R.rnd() < 0.5) R.fila.push({ t: 1 + R.rnd() * 2, civil: true });
+}
+// cria um inimigo usando o cenário: atiradores ficam escondidos atrás de colunas, caixotes e
+// cantos de parede (ou em janelas, em Londres e no castelo) e só saem pra mirar; os outros saem de trás e avançam
+function nascer(tipo, papel, elite, zMin, zMax) {
+  // só o que aparece na tela (perto da câmera a tela "estreita")
+  const naTela = (X, z) => Math.abs(X) < 1.3 * z;
+  const perto = (R.props || []).filter(p => p.tipo !== 'cerca' && p.tipo !== 'lapide' && !R.explodidos.has(p.i) && p.d - R.camD > zMin && p.d - R.camD < zMax && !R.coberturas.has(p.i) && naTela(propX(p), p.d - R.camD));
+  if (papel === 'atirador') {
+    const janela = (R.bioma.tema === 'londres' || R.bioma.tema === 'gotico') && R.rnd() < 0.3;
+    let d0 = R.camD + zMin + R.rnd() * (zMax - zMin);
+    const parede = l => Math.abs(cX(d0) + l * largC(d0) * 0.9) < 1.3 * (d0 - R.camD);
+    if (janela && (parede(-1) || parede(1))) {
+      const d = d0, lado = parede(-1) && (!parede(1) || R.rnd() < 0.5) ? -1 : 1;
+      const Xp = cX(d) + lado * largC(d);
+      return criarInimigoT(tipo, papel, { elite, X: Xp - lado * 0.12, z: d - R.camD, alt: R.bioma.tema === 'londres' ? 1.35 : 1.1, cobX: Xp - lado * 0.12, sai: Xp - lado * 0.12, cob: 3 });
+    }
+    if (perto.length && R.rnd() < 0.75) {
+      const pr = perto[Math.floor(R.rnd() * perto.length)]; R.coberturas.add(pr.i);
+      const X = propX(pr), dentro = -Math.sign(X || 1);
+      const baixo = pr.tipo === 'caixote' || pr.tipo === 'barril' || pr.tipo === 'explosivo' || pr.tipo === 'braseiro' || pr.tipo === 'cristais';
+      // atrás de caixote: abaixa e levanta; atrás de coluna: sai de lado
+      return criarInimigoT(tipo, papel, { elite, X, z: pr.d - R.camD + 0.06, cobX: X, sai: baixo ? X : X + dentro * 0.3, cob: baixo ? 2 : 1 });
+    }
+    // canto de parede: aparece na porta/canto da parede lateral (se a parede estiver na tela)
+    if (parede(-1) || parede(1)) {
+      const lado = parede(-1) && (!parede(1) || R.rnd() < 0.5) ? -1 : 1, Xw = cX(d0) + lado * largC(d0);
+      return criarInimigoT(tipo, papel, { elite, X: Xw - lado * 0.28, z: d0 - R.camD, cobX: Xw - lado * 0.28, sai: Xw - lado * 0.28, cob: 3 });
+    }
+    // sem cobertura à vista: aparece "do nada" no fundo (sobe de uma escada, sai de uma porta ao fundo)
+    const z = Math.max(zMin + 0.3, zMax - 0.2), X = (R.rnd() * 2 - 1) * 1.1 * z;
+    return criarInimigoT(tipo, papel, { elite, X: cX(R.camD + z) + X * 0.6, z, cobX: cX(R.camD + z) + X * 0.6, sai: cX(R.camD + z) + X * 0.6, cob: 3 });
+  }
+  if (perto.length && R.rnd() < 0.6) {
+    const pr = perto[Math.floor(R.rnd() * perto.length)];
+    return criarInimigoT(tipo, papel, { elite, X: propX(pr), z: pr.d - R.camD + 0.05 });
+  }
+  const lado = R.rnd() < 0.4;
+  return criarInimigoT(tipo, papel, { elite, X: lado ? (R.rnd() < 0.5 ? -1.9 : 1.9) : undefined, z: lado ? 0.9 + R.rnd() * 0.5 : undefined });
 }
 function criarRefem() {
   const capt = R.bioma.tema === 'egito' ? 'mumia' : R.bioma.tema === 'londres' ? 'assassino' : 'esqueleto';
@@ -222,6 +263,15 @@ function aplicarEvento(e) {
     if (en) { const r = retInimigo(en); R.fx.push({ tipo: 'racha', x: r.cx, y: r.cy, t: 0, dur: 0.6, r: Math.max(r.w, r.h) * 0.6, seed: Math.random() }); }
   } else if (tipo === 'fecha') {
     texto('Ele se recompôs!', '#c8c8d8', 0.9);
+  } else if (tipo === 'explode') {
+    const pr = R.props[a]; if (pr && !R.fxExplodidos.has(pr.i)) { R.fxExplodidos.add(pr.i); R.explodidos.add(pr.i); fxExplosao(pr); }
+  } else if (tipo === 'disparo') {
+    // o atirador dispara: clarão na arma e um risco até o retrato do alvo
+    const en = R.ini.get(a), r = retPainel(b);
+    if (en && r) { const q = retInimigo(en); const cor = R.bioma.tema === 'londres' ? '#ffe9a0' : en.tipo === 'conjurador' ? '#c79bff' : '#ff9a6a'; R.fx.push({ tipo: 'tiroInimigo', x0: q.cx + (en.X > 0 ? -1 : 1) * q.w * 0.3, y0: q.y + q.h * 0.35, x1: r.x + r.w / 2, y1: r.y + r.h * 0.4, t: 0, dur: 0.2, cor }); }
+    som.disparoInimigo?.() || som.golpe(true);
+  } else if (tipo === 'emboscada') {
+    som.emboscada(); texto('EMBOSCADA!', '#ff8a6a', 1);
   } else if (tipo === 'feitico') {
     if (a === R.euI) return;      // quem lançou já viu
     const [k, ...xs] = c || [];
@@ -246,11 +296,36 @@ function simular(dt) {
   R.segT += dt;
   if (!S) return;
   if (S.tipo === 'viagem') {
-    R.estado = 'viagem'; R.anda = true;
+    R.estado = 'viagem';
     const alvo = PARADAS[R.seq.slice(0, R.seg + 1).filter(x => x.tipo === 'viagem').length - 1] ?? R.camD + 2;
-    R.camD = Math.min(alvo, R.camD + R.vel * dt * 1.0);
-    if (alvo - R.camD < 0.7) R.vel = Math.max(0.2, Math.min(R.vel, (alvo - R.camD) / 0.7));
-    if (R.camD >= alvo - 0.002) { R.camD = alvo; avancar(); }
+    // emboscada no corredor: a câmera para quando aparecem inimigos (como no Virtua Cop)
+    const emb = EMBOSCADAS.find(e => !R.emboscadas.has(e) && e < alvo - 0.6 && R.camD >= e - 0.01 && R.camD < e + 0.5);
+    if (emb != null) {
+      R.emboscadas.add(emb); R.embT = 0;
+      const tipos = tiposDoTema(R.bioma.tema, R.fase + 1).filter(([t]) => !DEFS[t].pesado && !VOAM.includes(t));
+      const n = 3 + Math.floor(R.rnd() * 2) + R.fase + (nJog() - 1) * 2;
+      for (let i = 0; i < n; i++) R.fila.push({ t: i * 0.3, tipo: (tipos[Math.floor(R.rnd() * tipos.length)] || ['esqueleto'])[0], papel: R.rnd() < 0.8 ? 'atirador' : 'perto' });
+      if (R.rnd() < 0.35) R.fila.push({ t: 0.8, civil: true });
+      ev('emboscada');
+    }
+    const ameaca = [...R.ini.values()].some(e => e.estado !== 'morto' && e.z > 0.3) || R.fila.length > 0;
+    if (R.embT != null) R.embT += dt;
+    // parado enquanto houver inimigo na frente (até ~9s); depois segue em frente e eles vão ficando pra trás
+    R.anda = !(ameaca && R.embT != null && R.embT < 9);
+    if (!ameaca) R.embT = null;
+    if (R.anda) {
+      const antes = R.camD;
+      R.camD = Math.min(alvo, R.camD + R.vel * dt * 1.0);
+      if (alvo - R.camD < 0.7) R.vel = Math.max(0.2, Math.min(R.vel, (alvo - R.camD) / 0.7));
+      const passo = R.camD - antes;   // o mundo chega mais perto enquanto a câmera anda
+      for (const en of R.ini.values()) { en.z -= passo; en.zAlvo -= passo; }
+      for (const r of R.ref.values()) r.z -= passo;
+      for (const q of R.proj.values()) q.z0 -= passo;
+      for (const [id, en] of R.ini) if (en.z < 0.22) R.ini.delete(id);
+      for (const [id, r] of R.ref) if (r.z < 0.25) R.ref.delete(id);
+    }
+    soltarFila(dt, 0.7, 1.8);
+    if (R.camD >= alvo - 0.002 && !ameaca) { R.camD = alvo; avancar(); return; }
   } else {
     R.anda = false;
     if (R.estado !== 'luta') {
@@ -262,51 +337,40 @@ function simular(dt) {
         ev('duelo', en.id, S.chefe ? 2 : 1);
       } else proximaOnda(S, 0);
     }
-    // solta quem está na fila
-    for (let i = R.fila.length - 1; i >= 0; i--) {
-      const f = R.fila[i]; f.t -= dt;
-      if (f.t > 0) continue;
-      R.fila.splice(i, 1);
-      if (f.refem) criarRefem();
-      else if (f.civil) criarCivil();
-      else {
-        // sai de trás de uma coluna/poste/estátua (estilo Virtua Cop) ou entra pelos lados
-        const esc = (R.props || []).filter(p => p.esconde && p.d - R.camD > 0.75 && p.d - R.camD < 2.1);
-        if (esc.length && R.rnd() < 0.7) {
-          const pr = esc[Math.floor(R.rnd() * esc.length)];
-          criarInimigoT(f.tipo, f.papel, { elite: f.elite, X: propX(pr), z: pr.d - R.camD + 0.05 });
-        } else {
-          const lado = R.rnd() < 0.35;
-          criarInimigoT(f.tipo, f.papel, { elite: f.elite, X: lado ? (R.rnd() < 0.5 ? -1.9 : 1.9) : undefined, z: lado ? 0.9 + R.rnd() * 0.5 : undefined });
-        }
-      }
-    }
+    soltarFila(dt, 0.6, 1.7);
     const vivos = [...R.ini.values()].filter(e => e.estado !== 'morto').length;
     const presos = [...R.ref.values()].some(r => r.estado === 'preso');
     if (!vivos && !R.fila.length && !presos) {
       R.onda++;
       if (S.tipo !== 'duelo' && R.onda < S.ondas) proximaOnda(S, R.onda);
-      else { R.fimLutaT = (R.fimLutaT || 0) + dt; if (R.fimLutaT > 1.2) { R.fimLutaT = 0; avancar(); } }
+      else { R.fimLutaT = (R.fimLutaT || 0) + dt; if (R.fimLutaT > 1.2) { R.fimLutaT = 0; avancar(); return; } }
     }
   }
   for (const en of R.ini.values()) simularInimigo(en, dt);
   for (const [id, en] of R.ini) if (en.estado === 'morto' && en.tE > 0.6) R.ini.delete(id);
   for (const p of R.proj.values()) {
     p.tt += dt;
-    if (p.tt >= p.dur) {
-      R.proj.delete(p.id);
-      ferirJog(p.alvo, p.dano, R.ini.get(p.de));
-    }
+    if (p.tt >= p.dur) { R.proj.delete(p.id); ferirJog(p.alvo, p.dano, R.ini.get(p.de)); }
   }
   for (const r of R.ref.values()) {
     r.t += dt;
-    if (r.civil) { r.X += r.vx * dt; if (Math.abs(r.X) > 2 && r.t > 1) R.ref.delete(r.id); }
+    if (r.civil) { r.X += r.vx * dt; if (Math.abs(r.X) > 2.4 && r.t > 1) R.ref.delete(r.id); }
     else if (r.estado === 'livre' || r.estado === 'salvo') { r.X += Math.sign(r.X || 1) * dt * 0.9; if (r.t > 2.5) R.ref.delete(r.id); }
     else if (r.estado === 'morto' && r.t > 9) R.ref.delete(r.id);
   }
 }
+function soltarFila(dt, zMin, zMax) {
+  for (let i = R.fila.length - 1; i >= 0; i--) {
+    const f = R.fila[i]; f.t -= dt;
+    if (f.t > 0) continue;
+    R.fila.splice(i, 1);
+    if (f.refem) criarRefem();
+    else if (f.civil) criarCivil();
+    else nascer(f.tipo, f.papel, f.elite, zMin, zMax);
+  }
+}
 function avancar() {
-  R.seg++; R.segT = 0; R.estado = 'viagem'; R.ini.clear(); R.proj.clear();
+  R.seg++; R.segT = 0; R.estado = 'viagem'; R.ini.clear(); R.proj.clear(); R.coberturas.clear(); R.embT = null;
   for (const [id, r] of R.ref) if (r.estado !== 'preso') R.ref.delete(id);
   if (R.seg >= R.seq.length) {
     if (R.fase >= FASES.length - 1) { terminar(true); return; }
@@ -332,6 +396,9 @@ function simularInimigo(en, dt) {
   }
   if (en.gelo > 0) { en.gelo -= dt; return; }     // congelado: não anda nem ataca
   if (en.duelo) { simularDuelo(en, dt); return; }
+  // rede de segurança: ninguém fica preso fora da tela
+  if (Math.abs(en.X) > 1.45 * Math.max(0.3, en.z) && !en.duelo && en.papel !== 'captor') { en.fora = (en.fora || 0) + dt; if (en.fora > 3) { en.X = Math.sign(en.X) * 1.0 * en.z; en.cobX = en.sai = en.X; en.cob = 3; en.fora = 0; } } else en.fora = 0;
+  if (en.papel === 'atirador') { simularAtirador(en, dt); return; }
   if (en.estado === 'atordoado') { if (en.tE > 1.4) { en.estado = 'anda'; en.tE = 0; en.cd = 0.8; } return; }
   // anda até a posição
   en.fase += dt;
@@ -364,6 +431,35 @@ function simularInimigo(en, dt) {
       if (en.duelo && ++en.ciclo % 3 === 0) { for (const j of vivosIdx()) { lancar(en, j); lancar(en, j, undefined, 0.35); } }
     }
   }
+}
+// tempo de mira encolhe com as fases (no Virtua Cop o anel fica "sempre laranja/vermelho" no fim)
+const miraDur = () => Math.max(0.95, 1.9 - R.fase * 0.22 - (nJog() - 1) * 0.05);
+function simularAtirador(en, dt) {
+  const sair = en.sai ?? en.X;
+  if (en.estado === 'espera') {                       // escondido (não dá pra acertar)
+    en.X = lerp(en.X, en.cobX ?? en.X, dt * 10); en.exp = Math.max(0, (en.exp || 0) - dt * 6);
+    en.cd -= dt;
+    // só alguns miram ao mesmo tempo; os outros aparecem e se escondem de novo (finta)
+    const mirando = [...R.ini.values()].filter(e => e.papel === 'atirador' && e.estado === 'prepara').length;
+    if (en.cd <= 0) { en.estado = 'anda'; en.tE = 0; en.finta = mirando >= nJog() + 1 || R.rnd() < 0.2; }
+  } else if (en.estado === 'anda') {                  // saindo da cobertura
+    en.X = lerp(en.X, sair, dt * 9); en.exp = Math.min(1, (en.exp || 0) + dt * 5);
+    if (en.tE > 0.28) {
+      if (en.finta) { if (en.tE > 0.75) { en.estado = 'espera'; en.tE = 0; en.cd = 0.6 + R.rnd() * 1.2; } }
+      else { en.estado = 'prepara'; en.tE = 0; en.alvo = alvoAleatorio(); en.mira = miraDur() * (0.9 + R.rnd() * 0.25); }
+    }
+  } else if (en.estado === 'prepara') {               // mirando: anel verde → amarelo → vermelho
+    en.X = lerp(en.X, sair, dt * 9); en.exp = 1;
+    if (en.tE >= (en.mira || 1.6)) {
+      en.estado = 'golpe'; en.tE = 0;
+      ev('disparo', en.id, en.alvo);
+      ferirJog(en.alvo, Math.round(7 * (1 + R.fase * 0.12) * (en.elite ? 1.5 : 1)), en);
+    }
+  } else if (en.estado === 'golpe') {
+    if (en.tE > 0.25) { en.estado = 'recupera'; en.tE = 0; }
+  } else if (en.estado === 'recupera') {
+    if (en.tE > 0.35) { en.estado = 'espera'; en.tE = 0; en.cd = 1 + R.rnd() * 1.6; }
+  } else if (en.estado === 'atordoado') { if (en.tE > 1) { en.estado = 'espera'; en.tE = 0; en.cd = 0.8; } }
 }
 // ---------- DUELO (miniboss e chefão) ----------
 // Loop: ele é agressivo e quase não sente golpe no corpo. Quando ele ataca, quem APARA (espadachins/monge no
@@ -530,6 +626,18 @@ function aplicarAcao(quem, a) {
     en.hp -= dano; en.flash = 0.12; R.placar += 40;
     if (C.rouba) curarJog(quem, Math.max(1, Math.round(dano * C.rouba)));
     if (en.hp <= 0) matar(en, quem);
+  } else if (tipo === 15) {
+    const pr = R.props[id]; if (!pr || R.explodidos.has(pr.i)) return;
+    R.explodidos.add(pr.i);
+    const ex = propX(pr), ez = pr.d - R.camD;
+    for (const en of [...R.ini.values()]) {
+      if (en.estado === 'morto' || Math.hypot(en.X - ex, (en.z - ez) * 1.6) > 0.75) continue;
+      const d = Math.round(80 * (1 + R.fase * 0.2) * (en.duelo ? 0.3 : 1));
+      en.hp -= d; en.flash = 0.2; if (en.estado !== 'morto' && !en.duelo) { en.estado = 'atordoado'; en.tE = 0; }
+      if (en.hp <= 0) matar(en, quem);
+    }
+    R.placar += 50;
+    ev('explode', id);
   } else if (tipo === 12) {
     ev('feitico', quem, a[1], a.slice(2));
   } else if (tipo === 13) {
@@ -574,22 +682,22 @@ function especialHost(quem) {
 // ---------- rede ----------
 function foto() {
   const e = [], p = [], r = [];
-  for (const en of R.ini.values()) e.push([en.id, TIPOS.indexOf(en.tipo), Math.round(en.X * 100), Math.round(en.z * 1000), Math.max(0, Math.round(en.hp)), en.mhp, ESTS.indexOf(en.estado), Math.round(en.tE * 100), en.alvo, en.elite ? 1 : 0, PAPEIS.indexOf(en.papel), en.refem || 0, ATAQUES.indexOf(en.ataque), en.duelo === 'chefe' ? 2 : en.duelo ? 1 : 0, Math.round(en.post || 0), Math.round((en.vulnT || 0) * 10), en.pontos && en.pontos.length ? en.pontos.map(q => [q.id, Math.round(q.ox * 100), Math.round(q.oy * 100), Math.round(q.t * 10), Math.round(q.vida * 10)]) : 0, Math.round(Math.max(0, en.gelo || 0) * 10), en.queima > 0 ? 1 : 0]);
+  for (const en of R.ini.values()) e.push([en.id, TIPOS.indexOf(en.tipo), Math.round(en.X * 100), Math.round(en.z * 1000), Math.max(0, Math.round(en.hp)), en.mhp, ESTS.indexOf(en.estado), Math.round(en.tE * 100), en.alvo, en.elite ? 1 : 0, PAPEIS.indexOf(en.papel), en.refem || 0, ATAQUES.indexOf(en.ataque), en.duelo === 'chefe' ? 2 : en.duelo ? 1 : 0, Math.round(en.post || 0), Math.round((en.vulnT || 0) * 10), en.pontos && en.pontos.length ? en.pontos.map(q => [q.id, Math.round(q.ox * 100), Math.round(q.oy * 100), Math.round(q.t * 10), Math.round(q.vida * 10)]) : 0, Math.round(Math.max(0, en.gelo || 0) * 10), en.queima > 0 ? 1 : 0, Math.round((en.alt || 0) * 100), en.cob || 0]);
   for (const q of R.proj.values()) p.push([q.id, Math.round(q.X0 * 100), Math.round(q.h0 * 100), Math.round(q.z0 * 1000), Math.round(q.tt * 100), Math.round(q.dur * 100), q.alvo, PROJ.indexOf(q.tipo)]);
   for (const q of R.ref.values()) r.push([q.id, Math.round(q.X * 100), Math.round(q.z * 1000), REF_E.indexOf(q.estado), Math.round(q.t * 10), q.civil ? 1 : 0, q.look || 0, q.captor || 0]);
   const j = {};
   for (const x of R.jog) j[x.i] = [x.hp, x.mhp, x.vivo ? 1 : 0];
-  return { tr: 1, run: R.run, f: R.fase, sg: R.seg, st: R.estado, an: R.anda ? 1 : 0, cd: Math.round(R.camD * 1000), sc: R.placar, mo: R.mortos, sv: R.salvos, pd: R.perdidos, e, p: p.length ? p : 0, r: r.length ? r : 0, j, ev: R.ev.slice(-30) };
+  return { tr: 1, ex: [...R.explodidos], run: R.run, f: R.fase, sg: R.seg, st: R.estado, an: R.anda ? 1 : 0, cd: Math.round(R.camD * 1000), sc: R.placar, mo: R.mortos, sv: R.salvos, pd: R.perdidos, e, p: p.length ? p : 0, r: r.length ? r : 0, j, ev: R.ev.slice(-30) };
 }
 function receberFoto(s) {
   if (!s || !s.tr || s.run !== R.run) return;
   R.ultimaFoto = R.t;
-  if (s.f !== R.fase || !R.props) { R.fase = s.f; R.bioma = FASES[s.f].bioma; R.fundo = null; R.props = gerarProps(s.f); R.camD = s.cd / 1000; }
+  if (s.f !== R.fase || !R.props) { R.fase = s.f; R.bioma = FASES[s.f].bioma; R.fundo = null; R.props = gerarProps(s.f); R.camD = s.cd / 1000; R.explodidos = new Set(); R.fxExplodidos = new Set(); }
   R.camDAlvo = (s.cd || 0) / 1000;
   R.seg = s.sg; R.estado = s.st; R.anda = !!s.an; R.placar = s.sc; R.mortos = s.mo; R.salvos = s.sv; R.perdidos = s.pd;
   const vistos = new Set();
   for (const a of s.e || []) {
-    const [id, ti, X, z, hp, mhp, est, tE, alvo, elite, papel, refem, atq, du, post, vt, pts, gel, qm] = a;
+    const [id, ti, X, z, hp, mhp, est, tE, alvo, elite, papel, refem, atq, du, post, vt, pts, gel, qm, alt, cob] = a;
     vistos.add(id);
     let en = R.ini.get(id);
     if (!en) { en = { id, tipo: TIPOS[ti], X: X / 100, z: z / 1000, flash: 0 }; R.ini.set(id, en); }
@@ -598,7 +706,7 @@ function receberFoto(s) {
     en.alvo = alvo; en.elite = !!elite; en.papel = PAPEIS[papel]; en.refem = refem; en.ataque = ATAQUES[atq] || 'rajada';
     en.pesado = !!DEFS[en.tipo]?.pesado || en.elite || !!du;
     en.duelo = du === 2 ? 'chefe' : du === 1 ? 'mini' : null; en.post = post || 0; en.vulnT = (vt || 0) / 10;
-    en.gelo = (gel || 0) / 10; en.queima = qm ? 1 : 0;
+    en.gelo = (gel || 0) / 10; en.queima = qm ? 1 : 0; en.alt = (alt || 0) / 100; en.cob = cob || 0;
     en.pontos = (pts || []).map(q => ({ id: q[0], ox: q[1] / 100, oy: q[2] / 100, t: q[3] / 10, vida: q[4] / 10 }));
   }
   for (const [id, en] of R.ini) if (!vistos.has(id)) { if (en.estado !== 'morto') { en.estado = 'morto'; en.tE = 0; } }
@@ -626,6 +734,7 @@ function receberFoto(s) {
   for (const id of [...R.ref.keys()]) if (!rv.has(id)) R.ref.delete(id);
   for (const [i, v] of Object.entries(s.j || {})) { const j = R.jog[i]; if (j) { j.hp = v[0]; j.mhp = v[1]; j.vivo = !!v[2]; } }
   for (const e of s.ev || []) aplicarEvento(e);
+  for (const i of s.ex || []) R.explodidos.add(i);
 }
 export function aoRede(st, k) {
   if (!R) return;
@@ -732,8 +841,15 @@ function alvosNaTela() {
     const w = 26 * p.esc, h = (r.estado === 'morto' ? 30 : 66) * p.esc;
     l.push({ k: 'ref', o: r, ret: { x: p.x - w / 2, y: p.y - h, w, h }, z: r.z - 0.001 });
   }
+  for (const pr of R.props || []) {
+    if (pr.tipo !== 'explosivo' || R.explodidos.has(pr.i)) continue;
+    const z = pr.d - R.camD; if (z < 0.3 || z > 3.2) continue;
+    const p = projetar(propX(pr), z), w = 46 * p.esc, h = 64 * p.esc;
+    l.push({ k: 'barril', o: { id: pr.i }, pr, ret: { x: p.x - w / 2, y: p.y - h, w, h }, z: z + 0.02 });
+  }
   for (const en of R.ini.values()) {
     if (en.estado === 'morto') continue;
+    if (en.papel === 'atirador' && en.estado === 'espera') continue;      // escondido: não dá pra acertar
     const ret = retInimigo(en);
     l.push({ k: 'ini', o: en, ret, z: en.z });
     for (const p of en.pontos || []) { if (p.t < 0) continue; const q = posPonto(en, p); l.push({ k: 'ponto', o: p, en, x: q.x, y: q.y, r: q.r, ret: { x: q.x - q.r, y: q.y - q.r, w: q.r * 2, h: q.r * 2 }, z: en.z - 0.0005 }); }
@@ -742,9 +858,9 @@ function alvosNaTela() {
 }
 function retInimigo(en) {
   const d = DEFS[en.tipo] || { w: 30, h: 70 };
-  const p = projetar(en.X, en.z, VOAM.includes(en.tipo) ? 0.55 : 0);
+  const p = projetar(en.X, en.z, (VOAM.includes(en.tipo) ? 0.55 : 0) + (en.alt || 0));
   const esc = p.esc * escInimigo(en);
-  const w = Math.max(d.w, 34) * esc * 1.25, h = d.h * esc * 1.05;
+  const w = Math.max(d.w, 34) * esc * 1.25, h = d.h * esc * 1.05 * (en.cob === 2 ? 0.75 : 1);
   const base = VOAM.includes(en.tipo) ? p.y + h * 0.5 : p.y;
   return { x: p.x - w / 2, y: base - h, w, h, cx: p.x, cy: base - h / 2, esc };
 }
@@ -788,6 +904,7 @@ function tocar(x, y) {
       quebrarPonto(a); acertou = true; break;
     }
     if (!dentro({ x, y }, a.ret)) continue;
+    if (a.k === 'barril') { explodirBarril(a.pr); acertou = true; break; }
     if (a.k === 'ref') {
       if (a.o.estado !== 'preso' && a.o.estado !== 'livre') continue;
       acao([4, a.o.id]); fxToque(x, y, '#ff5a6a', 1); acertou = true; break;
@@ -821,6 +938,7 @@ function posAlvoMagia(m) {
   if (a.k === 'ini') { const en = R.ini.get(a.id); if (!en || en.estado === 'morto') return null; const r = retInimigo(en); return { x: r.cx + m.dx * 0.5, y: r.cy + m.dy * 0.5 }; }
   if (a.k === 'ponto') { const en = R.ini.get(a.en); const p = en && (en.pontos || []).find(q => q.id === a.id); if (!p) return null; return posPonto(en, p); }
   if (a.k === 'ref') { const r = R.ref.get(a.id); if (!r || (r.estado !== 'preso' && r.estado !== 'livre')) return null; const p = projetar(r.X, r.z); return { x: p.x, y: p.y - 40 * p.esc }; }
+  if (a.k === 'barril') { const pr = R.props[a.id]; if (!pr || R.explodidos.has(pr.i)) return null; const p = projetar(propX(pr), pr.d - R.camD); return { x: p.x, y: p.y - 30 * p.esc }; }
   return null;
 }
 function atualizarMagias(dt) {
@@ -843,6 +961,7 @@ function chegarMagia(m, vivo) {
   }
   if (a.k === 'ponto') { const en = R.ini.get(a.en); if (en) quebrarPonto({ en, o: { id: a.id }, x: m.x, y: m.y }); return; }
   if (a.k === 'ref') { acao([4, a.id]); fxToque(m.x, m.y, '#ff5a6a', 1); return; }
+  if (a.k === 'barril') { const pr = R.props[a.id]; if (pr) explodirBarril(pr); return; }
   if (a.k === 'ini') { const en = R.ini.get(a.id); if (en) { acertarInimigo(en, m.x, m.y, false); if (!m.sangue) som.impactoMagico(); } }
 }
 // ---------- feitiços desenhados (Mago / Maga) ----------
@@ -979,6 +1098,19 @@ function acertarInimigo(en, x, y, podeAparar, multi = 1) {
   R.tremor = Math.max(R.tremor, aparo ? 6 : 2.5);
 }
 // ponto fraco: só existe com o chefe aberto; cada acerto tira vida de verdade
+function explodirBarril(pr) {
+  if (R.explodidos.has(pr.i)) return;
+  if (!R.host) { R.explodidos.add(pr.i); R.fxExplodidos.add(pr.i); fxExplosao(pr); }
+  acao([15, pr.i]);
+}
+function fxExplosao(pr) {
+  const z = pr.d - R.camD, p = projetar(propX(pr), Math.max(0.25, z));
+  const r = 160 * p.esc * 1.4;
+  R.fx.push({ tipo: 'explosao', x: p.x, y: p.y - 30 * p.esc, r, t: 0, dur: 0.6 });
+  R.fx.push({ tipo: 'flash', t: 0, dur: 0.2, cor: 'rgba(255,190,90,.8)' });
+  for (const cor of ['#ffd27a', '#ff7a20', '#ff3a20', '#5a4a40']) faiscas(p.x, p.y - 30 * p.esc, cor, 8, 520, 700);
+  R.tremor = 16; som.explosao?.() || som.quebraArmadura?.(); som.fogo();
+}
 function quebrarPonto(a, mult = 1) {
   const dano = Math.round(R.C.dano * mult * 1.6 * (1 + R.fase * 0.15) + (R.C.gesto === 'toque' ? Math.min(10, R.cmb.n * 0.5) : 0));
   acao([9, a.en.id, a.o.id, dano]);
@@ -1002,6 +1134,7 @@ function cortar(tq, a, b) {
     if (!segRet(a, b, al.ret)) continue;
     tq.ult.set(chave, R.t);
     if (al.k === 'ref') { if (al.o.estado === 'preso' || al.o.estado === 'livre') acao([4, al.o.id]); continue; }
+    if (al.k === 'barril') { explodirBarril(al.pr); continue; }
     const mult = multCorte(tq);
     tq.acertos++;
     if (al.k === 'ponto') { quebrarPonto(al, mult); continue; }
@@ -1066,7 +1199,14 @@ export function passo(dt) {
   if (!R.host) { R.camD += R.vel * dt * 1.0; if (R.camDAlvo != null) R.camD = lerp(R.camD, R.camDAlvo, dt * 4); }
   if (R.dicaDuelo > 0) R.dicaDuelo -= dtReal;
   // virar a câmera na direção do corredor à frente
-  const yawAlvo = Math.atan2(curva(R.camD + 1.3) - curva(R.camD), 1.3) * 0.9;
+  let foco = 0, peso = 0;
+  for (const en of R.ini.values()) if (en.papel === 'atirador' && en.estado === 'prepara') { const k = clamp(en.tE / (en.mira || 1.6), 0, 1); foco += Math.atan2(en.X, Math.max(0.3, en.z)) * k; peso += k; }
+  let yawAlvo = Math.atan2(curva(R.camD + 1.3) - curva(R.camD), 1.3) * 0.9 + (peso ? clamp(foco / Math.max(1, peso) * 0.18, -0.1, 0.1) : 0);
+  // parado numa emboscada: a câmera vira pra onde estão os inimigos
+  if (R.estado === 'viagem' && !R.anda) {
+    const vivos = [...R.ini.values()].filter(e => e.estado !== 'morto' && e.z > 0.3);
+    if (vivos.length) yawAlvo = clamp(vivos.reduce((a, e) => a + Math.atan2(e.X, e.z), 0) / vivos.length, -0.7, 0.7);
+  }
   R.yaw = lerp(R.yaw || 0, yawAlvo, Math.min(1, dtReal * 3));
   R.roll = (yawAlvo - R.yaw) * 0.6 + R.yaw * 0.08;
   if (R.host) simular(dt);
@@ -1203,6 +1343,7 @@ export function desenhar(ctx, cw, ch, dpr) {
 const PASSO = 0.3;
 const PARADAS = [2.4, 7.9, 13.4, 18.9, 24.4];         // onde a câmera para (uma por trecho de viagem)
 const SALA_INI = 0.3, SALA_FIM = 2.8;
+const EMBOSCADAS = [1.1, 5.2, 6.7, 10.7, 12.2, 16.2, 17.7, 21.7, 23.2];   // paradas curtas no meio dos corredores
 const suave = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 function salaEm(d) {
   let m = 0;
@@ -1395,15 +1536,27 @@ const fake = {};
 function desenharInimigoT(c, en) {
   const d = DEFS[en.tipo] || DEFS.esqueleto;
   const voa = VOAM.includes(en.tipo);
-  const p = projetar(en.X, en.z, voa ? 0.55 : 0);
+  const p = projetar(en.X, en.z, (voa ? 0.55 : 0) + (en.alt || 0));
   const morto = en.estado === 'morto';
+  // atirador: quanto está exposto (0 escondido, 1 fora)
+  if (en.papel === 'atirador') en.expV = lerp(en.expV ?? 0, en.estado === 'espera' ? 0 : 1, 0.25);
+  if (en.cob === 3) {
+    // janela/porta escura na parede: é dali que ele aparece
+    const pw = 40 * p.esc, ph = (en.alt ? 70 : 96) * p.esc;
+    c.fillStyle = 'rgba(8,4,10,.85)'; c.fillRect(p.x - pw / 2, p.y - ph, pw, ph);
+    c.strokeStyle = 'rgba(0,0,0,.6)'; c.lineWidth = 2; c.strokeRect(p.x - pw / 2, p.y - ph, pw, ph);
+    if ((en.expV ?? 1) < 0.03 && !morto) return;
+  }
   const esc = p.esc * escInimigo(en) / (en.elite ? 1.2 : 1);
   c.save();
+  if (en.cob === 3 && !morto) c.globalAlpha = en.expV ?? 1;
   if (morto) c.globalAlpha = clamp(1 - en.tE / 0.5, 0, 1);
   if (en.tipo === 'assassino' && en.estado === 'anda' && en.z > 0.7) c.globalAlpha *= 0.35;
   // sombra
-  if (!voa) { c.fillStyle = 'rgba(0,0,0,.35)'; c.beginPath(); c.ellipse(p.x, p.y, d.w * esc * 0.8, d.w * esc * 0.18, 0, 0, 7); c.fill(); }
+  if (!voa && !en.alt) { c.fillStyle = 'rgba(0,0,0,.35)'; c.beginPath(); c.ellipse(p.x, p.y, d.w * esc * 0.8, d.w * esc * 0.18, 0, 0, 7); c.fill(); }
   c.translate(p.x, voa ? p.y + d.h * esc * 0.5 : p.y);
+  if (en.cob === 2 && !morto) c.translate(0, (1 - (en.expV ?? 1)) * d.h * esc * 0.75);     // agachado atrás do caixote
+  if (en.cob === 3 && !morto) c.translate(0, (1 - (en.expV ?? 1)) * d.h * esc * 0.3);
   if (morto) { c.rotate(en.tE * 1.5 * (en.X > 0 ? 1 : -1)); c.translate(0, en.tE * 40); }
   c.scale(esc, esc);
   Object.assign(fake, {
@@ -1435,8 +1588,19 @@ function desenharInimigoT(c, en) {
   c.restore();
   if (morto) return;
   const r = retInimigo(en);
+  // MIRA (Virtua Cop): anel que gira e fecha, verde → amarelo → vermelho piscando
+  if (en.papel === 'atirador' && en.estado === 'prepara') {
+    const k = clamp(en.tE / (en.mira || miraDur()), 0, 1);
+    const cor = k < 0.5 ? '#5dff7a' : k < 0.8 ? '#ffd84a' : (Math.floor(R.t * 16) % 2 ? '#ff2a3a' : '#ffffff');
+    const rr2 = Math.max(r.w, r.h * 0.6) * (1.25 - k * 0.6), cx = r.cx, cy = r.y + r.h * 0.35;
+    c.save(); c.strokeStyle = cor; c.lineWidth = 3; c.lineCap = 'round';
+    for (let i = 0; i < 4; i++) { const a = R.t * 3 + i * Math.PI / 2; c.beginPath(); c.arc(cx, cy, rr2, a, a + 1.0); c.stroke(); }
+    c.beginPath(); c.moveTo(cx - rr2 - 8, cy); c.lineTo(cx - rr2 * 0.6, cy); c.moveTo(cx + rr2 * 0.6, cy); c.lineTo(cx + rr2 + 8, cy); c.moveTo(cx, cy - rr2 - 8); c.lineTo(cx, cy - rr2 * 0.6); c.moveTo(cx, cy + rr2 * 0.6); c.lineTo(cx, cy + rr2 + 8); c.stroke();
+    c.fillStyle = R.jog[en.alvo]?.cor || '#fff'; c.beginPath(); c.arc(cx + rr2 * 0.72, cy - rr2 * 0.72, 4, 0, 7); c.fill();
+    c.restore();
+  }
   // aviso de golpe: anel que fecha + cor do jogador alvo
-  if (en.estado === 'prepara') {
+  if (en.estado === 'prepara' && en.papel !== 'atirador') {
     const prep = en.duelo ? (PREP[en.ataque] || 0.8) : en.papel === 'perto' ? (en.pesado ? 1.15 : 0.85) : 0.6;
     const k = clamp(en.tE / prep, 0, 1);
     const cor = R.jog[en.alvo]?.cor || '#fff';
@@ -1508,8 +1672,12 @@ function gerarProps(f) {
     if (salaEm(d) > 0.2) continue;
     let v = r() * tot, tipo = lista[0][0];
     for (const [t, p] of lista) if ((v -= p) < 0) { tipo = t; break; }
-    out.push({ d, lado: r() < 0.5 ? -1 : 1, k: 0.78, tipo, v: r() });
+    if (r() < 0.12) tipo = 'explosivo';
+    out.push({ d, lado: r() < 0.5 ? -1 : 1, k: tipo === 'explosivo' ? 0.6 : 0.78, tipo, v: r() });
   }
+  // barris explosivos nos salões (atire neles perto dos inimigos!)
+  for (const P of PARADAS) for (let k = 0; k < 2; k++) out.push({ d: P + 0.9 + r() * 1.4, lado: r() < 0.5 ? -1 : 1, k: 0.35 + r() * 0.35, tipo: 'explosivo', v: r() });
+  out.forEach((p, i) => { p.i = i; });
   return out;
 }
 function propX(pr) { return cX(pr.d) + pr.lado * largC(pr.d) * pr.k; }
@@ -1541,6 +1709,16 @@ function desenharProp(c, pr, z) {
     if (t === 'poste') { c.fillStyle = '#ffe6a0'; c.fillRect(-12, -alto - 26, 24, 26); c.strokeRect(-12, -alto - 26, 24, 26); brilhoEm(0, -alto - 14, 'rgba(255,210,120,.9)', 90); }
     else if (t === 'candelabro') { for (const x of [-22, 0, 22]) { c.fillStyle = '#f4ecd8'; c.fillRect(x - 4, -alto - 22, 8, 22); brilhoEm(x, -alto - 28, 'rgba(255,170,90,.9)', 30); } c.strokeStyle = '#2a2230'; c.lineWidth = 5; c.beginPath(); c.moveTo(-22, -alto); c.lineTo(22, -alto); c.stroke(); }
     else { c.fillStyle = '#8a6a3a'; c.beginPath(); c.moveTo(-26, -alto); c.lineTo(26, -alto); c.lineTo(14, -alto + 22); c.lineTo(-14, -alto + 22); c.closePath(); c.fill(); c.stroke(); brilhoEm(0, -alto - 20, 'rgba(255,140,40,.95)', 60); c.fillStyle = '#ffb040'; c.beginPath(); c.moveTo(-14, -alto); c.quadraticCurveTo(0, -alto - 50 - Math.sin(R.t * 9) * 8, 14, -alto); c.fill(); }
+  } else if (t === 'explosivo') {
+    if (R.explodidos.has(pr.i)) { c.restore(); return; }
+    const tema = b.tema;
+    if (tema === 'egito') { c.fillStyle = '#b8682a'; c.beginPath(); c.ellipse(0, -30, 20, 30, 0, 0, 7); c.fill(); c.stroke(); c.fillRect(-8, -66, 16, 10); c.strokeRect(-8, -66, 16, 10); }
+    else if (tema === 'cristal') { cristal(c, 0, 0, 70, 18, ['#ffd0d0', '#ff3a4a', '#7a0a1a'], 0); }
+    else { c.fillStyle = tema === 'gotico' ? '#5a3a20' : '#a8241c'; c.fillRect(-20, -58, 40, 58); c.strokeRect(-20, -58, 40, 58); c.strokeStyle = '#2a2a2a'; c.lineWidth = 4; c.beginPath(); c.moveTo(-20, -44); c.lineTo(20, -44); c.moveTo(-20, -14); c.lineTo(20, -14); c.stroke(); }
+    // símbolo de perigo
+    c.fillStyle = '#ffd24a'; c.beginPath(); c.moveTo(0, -42); c.lineTo(9, -26); c.lineTo(-9, -26); c.closePath(); c.fill();
+    c.fillStyle = '#1a1010'; c.fillRect(-1.5, -38, 3, 7); c.fillRect(-1.5, -29, 3, 2);
+    brilhoEm(0, -30, 'rgba(255,90,40,.6)', 40);
   } else if (t === 'lapide') {
     c.fillStyle = clara; c.beginPath(); c.moveTo(-22, 0); c.lineTo(-22, -46); c.arc(0, -46, 22, Math.PI, 0); c.lineTo(22, 0); c.closePath(); c.fill(); c.stroke();
     c.strokeStyle = escura; c.lineWidth = 3; c.beginPath(); c.moveTo(0, -56); c.lineTo(0, -24); c.moveTo(-9, -44); c.lineTo(9, -44); c.stroke();
@@ -1748,6 +1926,18 @@ function desenharFx(c) {
       }
       const q = f.pts[cab], ant = f.pts[Math.max(0, cab - 1)], ang = Math.atan2(q.y - ant.y, q.x - ant.x);
       if (k < 0.4) { c.save(); c.translate(q.x, q.y); c.rotate(ang); c.drawImage(brilho('rgba(255,160,60,.95)', 48), -50, -50, 100, 100); c.fillStyle = '#fff2c0'; c.beginPath(); c.moveTo(34, 0); c.lineTo(-10, -9); c.lineTo(-4, 0); c.lineTo(-10, 9); c.closePath(); c.fill(); c.restore(); }
+    } else if (f.tipo === 'tiroInimigo') {
+      c.globalCompositeOperation = 'lighter'; c.globalAlpha = 1 - k; c.lineCap = 'round';
+      const mx = lerp(f.x0, f.x1, Math.min(1, k * 3)), my = lerp(f.y0, f.y1, Math.min(1, k * 3));
+      c.strokeStyle = f.cor; c.lineWidth = 5; c.beginPath(); c.moveTo(f.x0, f.y0); c.lineTo(mx, my); c.stroke();
+      c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.stroke();
+      c.drawImage(brilho(rgba(f.cor, 0.95), 32), f.x0 - 26, f.y0 - 26, 52, 52);
+    } else if (f.tipo === 'explosao') {
+      c.translate(f.x, f.y); c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = 1 - k; c.drawImage(brilho('rgba(255,170,60,.95)', 64), -f.r * (0.6 + k), -f.r * (0.6 + k), f.r * (1.2 + k * 2), f.r * (1.2 + k * 2));
+      c.globalCompositeOperation = 'source-over';
+      for (let i = 0; i < 9; i++) { const a = i * 0.7 + f.r, d = f.r * (0.2 + k * 0.8); c.fillStyle = i % 3 === 0 ? '#ffe08a' : i % 3 === 1 ? '#ff7a20' : '#5a4a40'; c.globalAlpha = (1 - k) * 0.9; c.beginPath(); c.arc(Math.cos(a) * d, Math.sin(a) * d * 0.7 - k * f.r * 0.4, f.r * 0.25 * (1 - k * 0.5), 0, 7); c.fill(); }
+      c.strokeStyle = '#fff2c0'; c.lineWidth = 3 * (1 - k); c.globalAlpha = 1 - k; c.beginPath(); c.arc(0, 0, f.r * (0.4 + k * 1.2), 0, 7); c.stroke();
     } else if (f.tipo === 'racha') {
       const rr2 = rng(Math.floor(f.seed * 1e6)); c.translate(f.x, f.y); c.globalAlpha = 1 - k; c.strokeStyle = '#fff2b0'; c.lineWidth = 3; c.globalCompositeOperation = 'lighter';
       for (let i = 0; i < 7; i++) { let x = 0, y = 0, a = rr2() * 7; c.beginPath(); c.moveTo(0, 0); for (let s2 = 0; s2 < 4; s2++) { a += (rr2() - 0.5) * 1.2; x += Math.cos(a) * f.r * 0.25 * Math.min(1, k * 4); y += Math.sin(a) * f.r * 0.25 * Math.min(1, k * 4); c.lineTo(x, y); } c.stroke(); }
