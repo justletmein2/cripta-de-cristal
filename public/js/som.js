@@ -75,6 +75,37 @@ export const som = {
     tom(var_(forte ? 1900 : 2400, 0.15), 0.12, { tipo: 'square', vol: 0.035, ate: 1200, rev: 0.3 });
     if (forte) ruido(0.3, { vol: 0.15, de: 400, ate: 90, q: 0.7, tipo: 'lowpass' });
   },
+  // mago: zumbido cristalino que sobe
+  disparo: () => {
+    tom(var_(520), 0.18, { tipo: 'triangle', vol: 0.08, ate: 1560, rev: 0.5 });
+    tom(var_(1560), 0.12, { tipo: 'sine', vol: 0.045, ate: 3120, atraso: 0.03, rev: 0.6 });
+    ruido(0.12, { vol: 0.07, de: 9000, ate: 4000, q: 3, rev: 0.4 });
+  },
+  impactoMagico: () => {
+    sino(var_(1318, 0.06), 0.55, 0.045);
+    tom(var_(260), 0.14, { vol: 0.22, ate: 80, rev: 0.1 });
+    ruido(0.1, { vol: 0.14, de: 5000, ate: 1500, q: 1, rev: 0.3 });
+  },
+  runa: () => [784, 1175, 1568, 2349].forEach((f, i) => sino(f, 0.7, 0.045, i * 0.035)),
+  runaFalhou: () => { tom(300, 0.25, { tipo: 'triangle', vol: 0.07, ate: 140, rev: 0.3 }); ruido(0.2, { vol: 0.06, de: 1200, ate: 300, q: 1 }); },
+  trovao: () => {
+    ruido(0.07, { vol: 0.7, de: 9000, ate: 3500, q: 0.5, rev: 0.2 });
+    ruido(1.5, { vol: 0.5, de: 900, ate: 50, q: 0.6, tipo: 'lowpass', ataque: 0.02, rev: 0.9 });
+    tom(55, 1.1, { tipo: 'sawtooth', vol: 0.16, ate: 28, rev: 0.6 });
+    ruido(0.05, { vol: 0.4, de: 7000, ate: 3000, q: 0.7, atraso: 0.12, rev: 0.3 });
+  },
+  gelo: () => {
+    ruido(0.6, { vol: 0.2, de: 9000, ate: 5000, q: 4, ataque: 0.05, rev: 0.6 });
+    [2093, 2637, 3136, 3951].forEach((f, i) => sino(f, 0.9, 0.035, i * 0.05));
+    tom(180, 0.3, { tipo: 'triangle', vol: 0.1, ate: 90 });
+    ruido(0.15, { vol: 0.25, de: 6000, ate: 2500, q: 1.2, atraso: 0.05 });
+  },
+  fogo: () => {
+    ruido(0.75, { vol: 0.42, de: 350, ate: 2600, q: 0.7, ataque: 0.04, rev: 0.3 });
+    ruido(0.5, { vol: 0.2, de: 3000, ate: 700, q: 1.5, atraso: 0.12, rev: 0.3 });
+    tom(var_(90), 0.55, { tipo: 'sawtooth', vol: 0.12, ate: 42, rev: 0.4 });
+  },
+  crepita: () => ruido(0.05, { vol: 0.06, de: var_(3200, 0.3), ate: 1500, q: 2, rev: 0.1 }),
   magia: () => {
     tom(var_(660), 0.35, { tipo: 'sine', vol: 0.12, ate: 1320, rev: 0.6 });
     tom(var_(990), 0.3, { tipo: 'triangle', vol: 0.06, ate: 1980, atraso: 0.02, rev: 0.6 });
