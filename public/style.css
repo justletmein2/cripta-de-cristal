@@ -117,3 +117,10 @@ body.touch .toque { display: block; }
 /* modo trilho: sem joystick nem botões de ação (o jogo é no dedo, direto na tela) */
 body.trilho #toque { display: none !important; }
 #bModo { margin-top: 4px; }
+
+/* botão de voltar pro hub (portal com todos os jogos) */
+.voltarHub { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; max-width: 360px; margin: 14px auto 0;
+  padding: 12px 16px; border-radius: 16px; font: inherit; font-weight: 800; font-size: 16px; text-decoration: none;
+  color: #fff; background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.45); box-shadow: 0 4px 0 rgba(0,0,0,.22);
+  -webkit-tap-highlight-color: transparent; }
+.voltarHub:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,.22); }
