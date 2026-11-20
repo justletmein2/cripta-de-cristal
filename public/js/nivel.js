@@ -182,7 +182,14 @@ function gerarNivelBruto(semente, andar) {
         ir(3, g);
       }
     }
-    while (x < W) chao[x++] = g;
+    // zona final sempre plana e segura (é onde fica o portal): o último trecho (fosso, pontes...)
+    // podia passar do limite e jogar o portal no fundo de um buraco com espinhos
+    for (let k = fim; k < W; k++) chao[k] = g;
+    x = W;
+    for (let i = armadilhas.length - 1; i >= 0; i--) if (armadilhas[i].tx >= fim - 2) armadilhas.splice(i, 1);
+    for (let i = objetos.length - 1; i >= 0; i--) if ((objetos[i].t === 'barril' || objetos[i].t === 'jaula') && objetos[i].x >= (fim - 1) * T) objetos.splice(i, 1);
+    // plataformas soltas que sobraram em cima da zona final
+    for (let k = fim; k < W; k++) for (let y = 0; y < H; y++) if (tiles[y * W + k] === 2) tiles[y * W + k] = 0;
   }
 
   // preenche chão, teto e paredes
