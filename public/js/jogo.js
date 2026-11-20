@@ -41,7 +41,7 @@ const G = {
   nome: localStorage.getItem('cc_nome') || '',
   tela: 'inicio', heroi: null, run: null, rede: { estado: {}, inimigos: null, golpes: {} },
   pausado: false, altarAndar: -1, hostAusenteT: 0,
-  jogoModo: localStorage.getItem('cc_modo') || 'trilho',   // 'trilho' (fliperama de mira) ou 'classico' (plataforma)
+  jogoModo: localStorage.getItem('cc_modo') || 'classico',   // 'trilho' (fliperama de mira) ou 'classico' (plataforma)
 };
 let P = null;                         // partida (andar atual)
 const uidSolo = 'eu';
