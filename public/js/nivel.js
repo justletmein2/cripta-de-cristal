@@ -16,9 +16,12 @@ export const TEMAS = [
 ];
 export const ANDARES_POR_CICLO = 4;      // 3 fases + chefe
 export const ehChefe = andar => andar % ANDARES_POR_CICLO === 0;
+// cada ciclo termina com um chefão diferente (Conde → Lorde Engrenagem → Anúbis → Guardião, e recomeça)
+const CHEFES = [{ tipo: 'conde', tema: 'gotico' }, { tipo: 'engrenagem', tema: 'londres' }, { tipo: 'anubis', tema: 'egito' }, { tipo: 'chefe', tema: 'cristal' }];
+export const chefeDo = andar => CHEFES[(Math.floor(andar / ANDARES_POR_CICLO) - 1) % CHEFES.length];
 const SORTEIO = [[BIOMAS[0], 1], [BIOMAS[1], 1], [BIOMAS[2], 1], [TEMAS[0], 2], [TEMAS[1], 2], [TEMAS[2], 2]];
 export function biomaDo(andar, semente = 1) {
-  if (ehChefe(andar)) return BIOMAS[3];
+  if (ehChefe(andar)) { const ch = chefeDo(andar); return ch.tema === 'cristal' ? BIOMAS[3] : TEMAS.find(b => b.tema === ch.tema); }
   const tot = SORTEIO.reduce((a, b) => a + b[1], 0);
   let v = hash(semente * 7 + andar * 131) * tot;
   for (const [b, p] of SORTEIO) if ((v -= p) < 0) return b;
@@ -82,8 +85,13 @@ function gerarNivelBruto(semente, andar) {
   const tiles = new Uint8Array(W * H);
   const chao = new Int16Array(W).fill(H - 6);   // linha do topo do chão por coluna
   const set = (x, y, v) => { if (x >= 0 && x < W && y >= 0 && y < H) tiles[y * W + x] = v; };
-  const spawns = [], enfeites = [], arenas = [];
-  let nid = 1;
+  const spawns = [], enfeites = [], arenas = [], objetos = [], armadilhas = [];
+  let nid = 1, oid = 1;
+  const tema = biomaDo(andar, semente).tema;
+  const TIPO_ARM = { gotico: 'pendulo', londres: 'vapor', egito: 'dardo', cristal: 'espinho' }[tema] || 'espinho';
+  const temMercador = !chefe && r.chance(0.6);
+  let mercadorFeito = false, desafioFeito = false;
+  const obj = (t, x, y, extra = {}) => objetos.push({ id: oid++, t, x: x * T + T / 2, y: y * T, ...extra });
   const inimigo = (tipo, x, y) => {
     if (tipo === 'escaravelho') { for (let k = -1; k <= 1; k++) spawns.push({ id: nid++, tipo, x: x * T + T / 2 + k * 30, y: y * T }); return; }
     spawns.push({ id: nid++, tipo, x: x * T + T / 2, y: y * T });
@@ -100,8 +108,11 @@ function gerarNivelBruto(semente, andar) {
     const g = H - 6;
     chao.fill(g);
     plataforma(10, 15, g - 4); plataforma(W - 16, W - 11, g - 4); plataforma(27, 36, g - 7);
-    spawns.push({ id: nid++, tipo: 'chefe', x: (W - 18) * T, y: (g - 1) * T });
-    enfeites.push({ t: 'trono', x: (W / 2) * T, y: g * T });
+    const ch = chefeDo(andar);
+    spawns.push({ id: nid++, tipo: ch.tipo, x: (W - 18) * T, y: (g - 1) * T });
+    if (ch.tema === 'cristal') enfeites.push({ t: 'trono', x: (W / 2) * T, y: g * T });
+    else for (const tx of [6, 20, 44, 58]) enfeites.push({ t: 'tocha', x: tx * T, y: (g - 2) * T });
+    if (ch.tema !== 'cristal') enfeites.push({ t: 'estandarte', x: 24 * T, y: (g - 12) * T }, { t: 'estandarte', x: 40 * T, y: (g - 12) * T });
   } else {
     let g = H - 7, x = 0;
     const ir = (n, alt) => { for (let i = 0; i < n && x < W; i++) chao[x++] = alt; };
@@ -111,9 +122,28 @@ function gerarNivelBruto(semente, andar) {
       const tipo = r.pick(['plano', 'plano', 'degrau', 'degrau', 'fosso', 'torre', 'arena', 'pontes']);
       if (tipo === 'plano') {
         const n = r.int(6, 11), x0 = x; ir(n, g);
+        if (temMercador && !mercadorFeito && x0 > W * 0.4 && n >= 7) {
+          // parada do mercador: sem monstros aqui
+          mercadorFeito = true; obj('mercador', x0 + 3, g);
+          enfeites.push({ t: 'tocha', x: (x0 + 1) * T, y: (g - 2) * T });
+          continue;
+        }
         if (r.chance(0.75)) inimigo(sortearTipo(), x0 + r.int(2, n - 2), g - 1);
         if (n >= 8 && r.chance(0.35)) inimigo(sortearTipo(), x0 + n - 2, g - 1);
         if (r.chance(0.45)) { const px = x0 + r.int(1, Math.max(1, n - 5)); plataforma(px, px + r.int(2, 4), g - 3); if (r.chance(0.5)) inimigo('morcego', px + 1, g - 6); }
+        const sorte = r();
+        if (sorte < 0.45 && n >= (TIPO_ARM === 'dardo' ? 8 : 6)) {
+          // armadilha do tema
+          const ax = TIPO_ARM === 'dardo' ? x0 + n - 1 : x0 + Math.floor(n / 2);
+          armadilhas.push({ id: armadilhas.length + 1, t: TIPO_ARM, x: ax * T + T / 2, y: g * T, tx: ax, d: -1, fase: r() * 3 });
+        } else if (sorte < 0.66) {
+          obj('barril', x0 + r.int(1, n - 2), g);
+          if (r.chance(0.4)) obj('barril', x0 + n - 1, g);
+        } else if (sorte < 0.82) {
+          // prisioneiro numa jaula, com um guarda do lado
+          obj('jaula', x0 + n - 3, g, { v: r.int(0, 2) });
+          inimigo(sortearTipo(), x0 + n - 5, g - 1);
+        }
       } else if (tipo === 'degrau') {
         g = Math.max(9, Math.min(H - 4, g + r.pick([-2, -1, 1, 2])));
         const n = r.int(4, 8), x0 = x; ir(n, g);
@@ -130,12 +160,16 @@ function gerarNivelBruto(semente, andar) {
         g = Math.max(8, g - sobe); ir(n, g);
         inimigo(r.chance(0.5) ? 'conjurador' : sortearTipo(), x0 + Math.floor(n / 2), g - 1);
         enfeites.push({ t: 'estandarte', x: (x0 + 1) * T, y: (g - 4) * T });
+        if (r.chance(0.5)) obj('bau', x0 + n - 2, g);   // prêmio de quem subiu
         // descida com degraus
         const desce = r.int(2, 5); g = Math.min(H - 4, g + desce); ir(2, g);
       } else if (tipo === 'arena') {
         const n = r.int(14, 18), x0 = x; ir(n, g);
         const q = r.int(3, 4);
-        arenas.push({ x0: x0 * T, x1: (x0 + n) * T, y: g * T });
+        const desafio = !desafioFeito && r.chance(0.55);
+        if (desafio) { desafioFeito = true; obj('bau', x0 + n - 2, g, { tranc: true, arena: arenas.length }); }
+        arenas.push({ x0: x0 * T, x1: (x0 + n) * T, y: g * T, desafio });
+        if (r.chance(0.5)) obj('barril', x0 + 2, g);
         for (let i = 0; i < q; i++) inimigo(sortearTipo(), x0 + 3 + Math.floor((n - 6) * i / Math.max(1, q - 1)), g - 1);
         plataforma(x0 + 4, x0 + 8, g - 3); plataforma(x0 + n - 9, x0 + n - 5, g - 5);
         enfeites.push({ t: 'tocha', x: (x0 + 2) * T, y: (g - 2) * T }, { t: 'tocha', x: (x0 + n - 2) * T, y: (g - 2) * T });
@@ -190,10 +224,15 @@ function gerarNivelBruto(semente, andar) {
     if (!chefe && r.chance(0.035)) enfeites.push({ t: 'corrente', x: x * T + T / 2, y: 0, s: 2 + r.int(1, 5) });
   }
 
+  // pêndulos ficam pendurados no teto
+  for (const a of armadilhas) if (a.t === 'pendulo') {
+    let y = 0; while (y < H && tiles[y * W + a.tx] === 1) y++;
+    a.ay = y * T; a.L = Math.max(80, a.y - 56 - a.ay); a.amp = Math.min(0.95, Math.max(0.35, 170 / a.L));
+  }
   const gi = chao[3];
   const gf = chao[W - 6];
   return {
-    w: W, h: H, tiles, chao, spawns, enfeites, arenas, chefe, andar,
+    w: W, h: H, tiles, chao, spawns, enfeites, arenas, objetos, armadilhas, chefe, andar,
     bioma: biomaDo(andar, semente),
     inicio: { x: 3 * T, y: gi * T },
     portal: chefe ? null : { x: (W - 6) * T, y: gf * T },

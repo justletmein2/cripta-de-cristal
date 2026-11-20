@@ -972,7 +972,7 @@ const FEIT = {
   gelo: { nome: 'PRISÃO DE GELO', cd: 6, cor: '#bff4ff' },
   fogo: { nome: 'LANÇA DE FOGO', cd: 4, cor: '#ffa040' },
 };
-function reamostrar(pts, n) {
+export function reamostrar(pts, n) {
   const L = []; let tot = 0;
   for (let i = 1; i < pts.length; i++) tot += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
   if (tot <= 0) return pts.slice(0, 1);
@@ -988,7 +988,7 @@ function reamostrar(pts, n) {
 }
 const compr = p => { let t = 0; for (let i = 1; i < p.length; i++) t += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return t; };
 const giro = (a, b, c2) => { let d = Math.atan2(c2.y - b.y, c2.x - b.x) - Math.atan2(b.y - a.y, b.x - a.x); while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
-function reconhecer(pts) {
+export function reconhecer(pts) {
   if (pts.length < 6) return null;
   const p = reamostrar(pts, 40), g = reamostrar(pts, 12);
   const L = compr(p), corda = Math.hypot(p[39].x - p[0].x, p[39].y - p[0].y);
@@ -997,7 +997,10 @@ function reconhecer(pts) {
   let soma = 0; for (let i = 1; i < 39; i++) soma += giro(p[i - 1], p[i], p[i + 1]);
   let cantos = 0, ultimo = -9;
   for (let i = 1; i < 11; i++) if (Math.abs(giro(g[i - 1], g[i], g[i + 1])) > 1.2 && i - ultimo > 1) { cantos++; ultimo = i; }
-  const fechado = corda < diag * 0.35;
+  // fechado: a ponta encosta no começo (aceita passar um pouco do ponto, como quem desenha rápido)
+  let perto = corda;
+  for (let i = 0; i < 12; i++) perto = Math.min(perto, Math.hypot(p[39].x - p[i].x, p[39].y - p[i].y), Math.hypot(p[0].x - p[39 - i].x, p[0].y - p[39 - i].y));
+  const fechado = perto < diag * 0.35 && Math.abs(soma) > 3.5;
   if (fechado && Math.abs(soma) > 4.4 && Math.min(bw, bh) > Math.max(bw, bh) * 0.35) return 'gelo';
   if (!fechado && cantos >= 2) return 'raio';
   if (!fechado && corda > 110 && corda / L > 0.5) return 'fogo';

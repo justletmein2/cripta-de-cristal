@@ -124,3 +124,11 @@ body.trilho #toque { display: none !important; }
   color: #fff; background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.45); box-shadow: 0 4px 0 rgba(0,0,0,.22);
   -webkit-tap-highlight-color: transparent; }
 .voltarHub:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,.22); }
+
+/* mercador */
+.bLoja { position: absolute; top: max(8px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); pointer-events: auto; padding: 10px 18px; border-radius: 14px; border: 2px solid #ffe28a; background: linear-gradient(170deg, #6a4a1a, #2a1608); color: #ffe28a; font: 900 16px Cinzel, serif; box-shadow: 0 0 16px rgba(255, 210, 110, .5); animation: pulsarLoja .7s infinite alternate; }
+@keyframes pulsarLoja { from { transform: translateX(-50%) scale(1); } to { transform: translateX(-50%) scale(1.06); } }
+.bLoja small { font: 700 11px Nunito, sans-serif; opacity: .7; }
+body.touch .bLoja small { display: none; }
+.bLoja[hidden] { display: none; }
+.bencao .preco { color: #ffe28a; font-weight: 900; font-size: 14px; }

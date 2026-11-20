@@ -4,8 +4,9 @@ export { ARMADURA };
 import { moverCorpo, temChaoFrente, paredeFrente, solido } from './fisica.js';
 import { cristal, brilho, rgba } from './arte.js';
 import { DEFS2, ARMADURA2, atualizarInimigo2, caixaGolpe2, desenharInimigo2, desenharProjetil2 } from './inimigos2.js';
+import { DEFS3, ARMADURA3, atualizarChefe3, caixaGolpe3, desenharChefe3, desenharProjetil3, desenharZona3, caixaZona3 } from './chefes.js';
 
-export const TIPOS = ['esqueleto', 'golem', 'morcego', 'conjurador', 'chefe', 'gargula', 'cavaleiroSombrio', 'automato', 'assassino', 'mumia', 'escaravelho'];
+export const TIPOS = ['esqueleto', 'golem', 'morcego', 'conjurador', 'chefe', 'gargula', 'cavaleiroSombrio', 'automato', 'assassino', 'mumia', 'escaravelho', 'conde', 'engrenagem', 'anubis'];
 export const ESTADOS = ['ronda', 'persegue', 'prepara', 'golpe', 'recupera', 'atordoado', 'morto'];
 
 export const DEFS = {
@@ -13,12 +14,13 @@ export const DEFS = {
   golem: { vida: 175, vel: 55, w: 62, h: 96, dano: 27, alcance: 96, prep: 0.85, golpe: 0.22, recup: 0.9, visao: 420, pesado: true, cristais: 10, nome: 'Golem de Cristal' },
   morcego: { vida: 32, vel: 160, w: 36, h: 26, dano: 12, alcance: 250, prep: 0.45, golpe: 0.5, recup: 0.6, visao: 520, voa: true, cristais: 3, nome: 'Morcego Espectral' },
   conjurador: { vida: 48, vel: 70, w: 30, h: 72, dano: 14, alcance: 520, prep: 0.75, golpe: 0.1, recup: 1.3, visao: 640, cristais: 6, nome: 'Conjurador' },
-  chefe: { vida: 1500, vel: 120, w: 96, h: 150, dano: 26, alcance: 2000, prep: 0.8, golpe: 0.6, recup: 0.9, visao: 5000, pesado: true, voa: true, cristais: 120, nome: 'Guardião do Prisma' },
+  chefe: { vida: 1500, vel: 120, w: 96, h: 150, dano: 26, alcance: 2000, prep: 0.8, golpe: 0.6, recup: 0.9, visao: 5000, pesado: true, voa: true, cristais: 120, chefe: true, nome: 'Guardião do Prisma', arena: 'O Trono do Prisma', cor: ['#ff4fc8', '#ffb3ec'] },
   ...DEFS2,
+  ...DEFS3,
 };
 
 // armadura: enquanto tiver, o monstro não se abala com os golpes; quando quebra, fica tonto e leva +50% de dano
-const ARMADURA = { golem: 70, chefe: 260, ...ARMADURA2 };
+const ARMADURA = { golem: 70, chefe: 260, ...ARMADURA2, ...ARMADURA3 };
 export function criarInimigo(sp, mult, elite = false) {
   const d = DEFS[sp.tipo];
   const ve = elite ? 2.2 : 1;
@@ -60,7 +62,7 @@ export function atualizarInimigo(en, dt, mundo) {
     const noAr = !d.voa && en.noChao === false;
     if (en.tE > lim && !noAr) { en.atordT = 0; muda(en, 'persegue'); }
     if (!d.voa) { en.grav = 0.7; moverCorpo(en, dt, nv); en.grav = 1; }
-    else if (en.tipo === 'chefe') { en.x = clamp(en.x + en.vx * dt, T * 3, (nv.w - 3) * T); }
+    else if (d.chefe) { en.x = clamp(en.x + en.vx * dt, T * 3, (nv.w - 3) * T); }
     else { en.x += en.vx * dt; en.y += en.vy * dt; en.vy *= Math.pow(0.05, dt); }
     return;
   }
@@ -100,6 +102,7 @@ export function atualizarInimigo(en, dt, mundo) {
   }
 
   if (en.tipo === 'chefe') { atualizarChefe(en, dt, mundo, alvo, dx); return; }
+  if (DEFS3[en.tipo]) { atualizarChefe3(en, dt, mundo, alvo, dx); return; }
   if (atualizarInimigo2(en, dt, mundo, alvo, dist, d)) return;
 
   // andarilhos: esqueleto, golem, conjurador
@@ -243,11 +246,12 @@ export function caixaGolpe(en) {
   if (en.tipo === 'morcego') return { x: en.x - 18, y: en.y - 26, w: 36, h: 26 };
   if (en.tipo === 'chefe' && en.ataque === 'investida') return { x: en.x - 50, y: en.y - 140, w: 100, h: 140 };
   if (DEFS2[en.tipo]) return caixaGolpe2(en);
+  if (DEFS3[en.tipo]) return caixaGolpe3(en);
   return null;
 }
 export function danoGolpe(en) {
   const d = DEFS[en.tipo];
-  return Math.round((en.tipo === 'chefe' ? d.dano * 1.2 : d.dano) * (en.mult?.dano || 1));
+  return Math.round((d.chefe ? d.dano * 1.2 : d.dano) * (en.mult?.dano || 1));
 }
 export const corpo = en => ({ x: en.x - en.w / 2, y: en.y - en.h, w: en.w, h: en.h });
 
@@ -259,7 +263,8 @@ export function desenharInimigo(c, en, t, bioma) {
   c.lineCap = 'round'; c.lineJoin = 'round';
   const prep = en.estado === 'prepara', golpe = en.estado === 'golpe';
   // aviso vermelho antes do golpe ("cuidado com o que brilha vermelho")
-  if (prep && en.tipo !== 'chefe') {
+  const ehChefe = DEFS[en.tipo].chefe;
+  if (prep && !ehChefe) {
     c.save(); c.globalCompositeOperation = 'lighter';
     const k = 0.6 + 0.4 * Math.sin(t * 30);
     c.drawImage(brilho('rgba(255,40,70,.85)', 48), -en.w * 1.1, -en.h * 1.25, en.w * 2.2, en.h * 1.5);
@@ -384,12 +389,14 @@ export function desenharInimigo(c, en, t, bioma) {
     cristal(c, ox, oy + 6, 14, 7, bioma.cristal, 0);
   } else if (en.tipo === 'chefe') {
     desenharChefe(c, en, t, bioma, f);
+  } else if (DEFS3[en.tipo]) {
+    desenharChefe3(c, en, t, bioma, f);
   } else if (DEFS2[en.tipo]) {
     desenharInimigo2(c, en, t, bioma, f);
   }
   c.restore();
   // barra de vida
-  if ((en.hp < en.mhp || en.marm > 0 || en.elite) && en.tipo !== 'chefe') {
+  if ((en.hp < en.mhp || en.marm > 0 || en.elite) && !ehChefe) {
     const w = Math.max(40, en.w), by = en.y - en.h * (en.elite ? 1.15 : 1) - 16;
     c.fillStyle = 'rgba(0,0,0,.6)'; c.fillRect(en.x - w / 2, by, w, 5);
     c.fillStyle = en.elite ? '#ffc94d' : '#ff4d6d'; c.fillRect(en.x - w / 2, by, w * clamp(en.hp / en.mhp, 0, 1), 5);
@@ -441,7 +448,7 @@ function desenharChefe(c, en, t, bioma, f) {
 }
 
 export function desenharProjetil(c, p, bioma, t) {
-  if (desenharProjetil2(c, p, t)) return;
+  if (desenharProjetil2(c, p, t) || desenharProjetil3(c, p, t)) return;
   c.save(); c.translate(p.x, p.y);
   c.globalCompositeOperation = 'lighter';
   const r = p.tipo === 1 ? 26 : 20;
@@ -454,6 +461,7 @@ export function desenharProjetil(c, p, bioma, t) {
 
 export function desenharZona(c, z, bioma, agoraT) {
   // agoraT: segundos desde que a zona foi criada
+  if (desenharZona3(c, z, agoraT)) return;
   if (agoraT < z.espera) {
     const k = agoraT / z.espera;
     c.save(); c.globalCompositeOperation = 'lighter';
@@ -467,4 +475,4 @@ export function desenharZona(c, z, bioma, agoraT) {
     cristal(c, z.x, z.y, h, 18, bioma.cristal, 0);
   }
 }
-export const caixaZona = z => ({ x: z.x - 24, y: z.y - 80, w: 48, h: 80 });
+export const caixaZona = caixaZona3;

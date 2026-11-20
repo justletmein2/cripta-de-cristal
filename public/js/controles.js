@@ -2,7 +2,7 @@
 export const ctrl = {
   esq: false, dir: false, baixo: false, cima: false,
   segura: { pular: false, atacar: false },
-  apertou: { pular: 0, atacar: 0, hab: 0, rolar: 0, pocao: 0, esp: 0 },
+  apertou: { pular: 0, atacar: 0, hab: 0, rolar: 0, pocao: 0, esp: 0, usar: 0 },
 };
 const apertar = a => { ctrl.apertou[a] = performance.now(); };
 export function consumir(a, janela = 140) {
@@ -15,7 +15,7 @@ export const temPedido = (a, janela = 140) => ctrl.apertou[a] && performance.now
 const TECLAS = {
   ArrowLeft: 'esq', KeyA: 'esq', ArrowRight: 'dir', KeyD: 'dir', ArrowDown: 'baixo', KeyS: 'baixo',
   Space: 'pular', KeyW: 'pular', ArrowUp: 'pular', KeyJ: 'atacar', KeyX: 'atacar', KeyK: 'hab', KeyC: 'hab',
-  KeyL: 'rolar', ShiftLeft: 'rolar', ShiftRight: 'rolar', KeyQ: 'pocao', KeyH: 'pocao', KeyU: 'esp', KeyI: 'esp',
+  KeyL: 'rolar', ShiftLeft: 'rolar', ShiftRight: 'rolar', KeyQ: 'pocao', KeyH: 'pocao', KeyU: 'esp', KeyI: 'esp', KeyE: 'usar', Enter: 'usar',
 };
 export let ativo = false;
 export function ligarControles(estaJogando) {

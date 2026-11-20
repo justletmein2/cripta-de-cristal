@@ -89,6 +89,7 @@
     </div>
   </div>
   <button id="bPausa" class="bPausa">❚❚</button>
+  <button id="bLoja" class="bLoja" hidden>🛒 Mercador <small>[E]</small></button>
 </div>
 
 <!-- ===== ALTAR (entre andares) ===== -->
@@ -102,6 +103,16 @@
       <span class="cristais">💎 <b id="altarCristais">0</b></span>
     </div>
     <p id="altarEspera" class="dica"></p>
+  </div>
+</section>
+
+<!-- ===== LOJA DO MERCADOR ===== -->
+<section id="telaLoja" class="tela sobre">
+  <div class="caixa central larga">
+    <h2>Mercador Errante</h2>
+    <p class="sub">“Cristais por coisinhas úteis, aventureiro!”</p>
+    <div id="lojaItens" class="bencaos"></div>
+    <div class="loja"><span class="cristais">💎 <b id="lojaCristais">0</b></span><button class="btn" id="bFecharLoja">Voltar à aventura</button></div>
   </div>
 </section>
 
@@ -153,7 +164,7 @@
       <li>Bater enche o <b>ESP</b> (botão ao lado do seu retrato, ou U no teclado).</li>
     </ul>
     <h3>🗺️ Modo Clássico</h3>
-    <p>Atravesse cada andar até o <b>portal</b> no fim. A cada 3 andares, um <b>chefe</b> espera no Trono do Prisma.</p>
+    <p>Atravesse cada andar até o <b>portal</b> no fim. A cada 3 andares vem um <b>chefão</b>, um diferente por vez: o <b>Conde Carmesim</b> (vira morcegos e aparece nas suas costas), o <b>Lorde Engrenagem</b> (vapor, serras e punho-foguete), o <b>Avatar de Anúbis</b> (areia que sobe do chão, lanças e some na areia) e o <b>Guardião do Prisma</b>. Abaixo da metade da vida eles ficam enfurecidos.</p>
     <ul>
       <li><b>Celular:</b> deite o celular. Arraste o polegar esquerdo para andar (puxe pra baixo pra descer de plataformas). Botões: ▲ pular, ⚔ atacar (aperte várias vezes pra combo, segure pro golpe carregado), ⟳ blink (atravessa golpes), habilidade, ESP especial e 🧪 poção.</li>
       <li><b>Computador:</b> ← → andar, Espaço pular, J atacar, K habilidade, L ou Shift rolar, U especial, Q poção, Esc pausa.</li>
@@ -165,6 +176,12 @@
       <li>Monstros com barra <b style="color:#7fd8ff">azul</b> têm armadura: bata até quebrar e eles ficam tontos levando dano extra. Os <b style="color:#ffc94d">dourados</b> são elites.</li>
       <li>Com amigos: quem cai fica no chão — fique perto por 2 segundos pra levantar. A Luz Sagrada do Padre também levanta.</li>
       <li>No altar entre os andares, cada um escolhe a sua bênção.</li>
+      <li><b>Mago(a):</b> além dos botões, <b>desenhe na tela</b> (no PC, arraste com o mouse): ⚡ <b>zigue-zague</b> = raio que pula de monstro em monstro · ◯ <b>círculo</b> = congela quem estiver dentro (e apaga os tiros inimigos) · 〰 <b>linha</b> = lança de fogo que queima.</li>
+      <li><b>Barris</b> com chama explodem quando você bate neles: ótimos contra grupos, mas cuidado com você mesmo e com os <b>prisioneiros</b>.</li>
+      <li><b>Prisioneiros</b> pedem socorro dentro de jaulas: quebre a jaula (3 golpes) e todo o grupo ganha vida e cristais.</li>
+      <li><b>Baús</b> abrem quando você encosta. Na <b>Sala de Desafio</b> o baú vem trancado: vença as duas ondas de elites pra abrir o tesouro grande.</li>
+      <li>O <b>Mercador</b> 🛒 vende poção, cura e bênçãos por cristais (chegue perto e toque no botão, ou aperte E).</li>
+      <li>Cada fase tem a sua <b>armadilha</b>: pêndulos no Castelo, jatos de vapor em Londres, dardos no Egito e cristais que brotam nas Catacumbas. Observe o ritmo, ou passe de blink.</li>
     </ul>
     <button class="btn grande" id="bFecharComo">Bora!</button>
   </div>

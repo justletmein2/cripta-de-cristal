@@ -1,6 +1,6 @@
 // Cripta de Cristal — laço principal, combate, telas e multiplayer.
 import { T, clamp, lerp, sinal, rng, hash, toca } from './util.js';
-import { gerarNivel, bloco, biomaDo, ehChefe, BIOMAS, ANDARES_POR_CICLO, tiposDoTema } from './nivel.js';
+import { gerarNivel, bloco, biomaDo, ehChefe, chefeDo, BIOMAS, ANDARES_POR_CICLO, tiposDoTema } from './nivel.js';
 import { criarFundo, desenharFundo, desenharAtmosfera, criarBlocos, desenharEnfeite, desenharPortal, varianteBloco, brilho, rgba, cristal } from './arte.js';
 const brilhoArte = brilho;
 import { CLASSES, ORDEM, nomeClasse, calcularPose, desenharHeroi } from './herois.js';
@@ -12,6 +12,9 @@ import * as rede from './rede.js';
 import { carregarSprites, pontaArma } from './sprites.js';
 import * as esp from './espetaculo.js';
 import * as trilho from './trilho.js';
+import { ATAQUES3, projAcerta, chaoDaArena } from './chefes.js';
+import { ARM, perigoArmadilha, desenharArmadilha, desenharObjeto } from './objetos.js';
+import { FEIT, reconhecer, reamostrar, desenharRastro, desenharFxFeitico, desenharEstadoInimigo } from './feiticos.js';
 carregarSprites(['cavaleiro_m', 'cavaleiro_f', 'mago_f', 'mago_m', 'vampiro_f', 'vampiro_m']);
 
 const $ = s => document.querySelector(s);
@@ -52,7 +55,7 @@ function mostrar(id) {
   document.querySelectorAll('.tela').forEach(s => s.classList.remove('ativa'));
   if (id) $('#' + id).classList.add('ativa');
   G.tela = id || 'jogo';
-  const jogando = !id || ['telaAltar', 'telaFim', 'telaPausa'].includes(id);
+  const jogando = !id || ['telaAltar', 'telaFim', 'telaPausa', 'telaLoja'].includes(id);
   const emPartida = !!P || trilho.ativo();
   $('#hud').classList.toggle('escondido', !jogando || !emPartida);
   document.body.classList.toggle('jogando', jogando && emPartida);
@@ -103,11 +106,14 @@ function iniciarAndar(andar, semente) {
   if (h.hp <= 0) h.hp = Math.round(h.mhp * 0.3);
   if (P.host) popularAndar(nv, andar, semente, nJog);
   P.arenas = (nv.arenas || []).map(a => ({ ...a, foi: false }));
+  iniciarObjetos(nv);
   P.cam.x = h.x - VW / 2; P.cam.y = h.y - VISTA_H * 0.68;
   prepararArte();
   mostrar(null);
   const chefe = nv.chefe;
-  aviso(chefe ? 'O Trono do Prisma' : P.bioma.nome, `Andar ${andar}${P.ciclo > 1 ? ' · Ciclo ' + P.ciclo : ''}`, 3200);
+  chaoDaArena(nv);
+  const spChefe = chefe && nv.spawns.find(s => DEFS[s.tipo]?.chefe);
+  aviso(chefe ? (DEFS[spChefe?.tipo]?.arena || 'O Trono do Prisma') : P.bioma.nome, `Andar ${andar}${P.ciclo > 1 ? ' · Ciclo ' + P.ciclo : ''}`, 3200);
   musica(true, chefe);
   if (chefe) setTimeout(() => som.chefe(), 600);
   atualizarBotoesHud();
@@ -117,8 +123,8 @@ function popularAndar(nv, andar, semente, nJog) {
   const r = rng(semente * 13 + andar * 7);
   const pElite = Math.min(0.3, 0.07 + 0.06 * ((andar - 1) % ANDARES_POR_CICLO) + 0.08 * (P.ciclo - 1));
   for (const sp of nv.spawns) {
-    P.ini.set(sp.id, criarInimigo(sp, P.mult, sp.tipo !== 'chefe' && r() < pElite));
-    if (sp.tipo === 'chefe') continue;
+    P.ini.set(sp.id, criarInimigo(sp, P.mult, !DEFS[sp.tipo].chefe && r() < pElite));
+    if (DEFS[sp.tipo].chefe) continue;
     for (let k = 1; k < nJog; k++) if (r() < 0.5) {
       const id = ++P.nextId, dx = (r() < 0.5 ? -1 : 1) * 60;
       const x = solido(nv, sp.x + dx, sp.y + 4) || sp.tipo === 'morcego' ? sp.x + dx : sp.x;
@@ -131,6 +137,7 @@ function checarEmboscadas(jogs) {
   for (const a of P.arenas || []) {
     if (a.foi || !jogs.some(j => j.vivo && j.x > a.x0 + T * 3 && j.x < a.x1 - T * 3 && Math.abs(j.y - a.y) < T * 3)) continue;
     a.foi = true;
+    if (a.desafio) { a.ondas = 2; a.ids = ondaDesafio(a, jogs.length); continue; }
     const n = 2 + jogs.length - 1 + (P.andar >= 3 ? 1 : 0) + (P.ciclo > 1 ? 1 : 0);
     const tipos = tiposDoTema(P.bioma.tema, P.andar).flatMap(([t, p]) => Array(Math.max(1, Math.round(p))).fill(t));
     for (let i = 0; i < n; i++) {
@@ -146,6 +153,180 @@ function checarEmboscadas(jogs) {
     aviso('Emboscada!', '', 1400);
   }
 }
+// sala de desafio: ondas de monstros de elite; quem limpar tudo destranca o baú
+function ondaDesafio(a, nJ) {
+  const n = 2 + nJ + (P.ciclo > 1 ? 1 : 0);
+  const tipos = tiposDoTema(P.bioma.tema, P.andar).flatMap(([t, p]) => Array(Math.max(1, Math.round(p))).fill(t));
+  const ids = [];
+  for (let i = 0; i < n; i++) {
+    const id = ++P.nextId, tipo = tipos[Math.floor(Math.random() * tipos.length)];
+    const x = a.x0 + T * 2 + (a.x1 - a.x0 - T * 4) * ((i + 0.5) / n);
+    const voa = tipo === 'morcego' || tipo === 'gargula';
+    const en = criarInimigo({ id, tipo, x, y: voa ? a.y - T * 3 : a.y }, P.mult, i < 1 + (a.ondas === 1 ? 1 : 0));
+    en.estado = 'persegue';
+    P.ini.set(id, en); ids.push(id);
+    P.fx.push({ tipo: 'runa', x, y: en.y - 50, t: 0, dur: 0.6 });
+  }
+  som.emboscada();
+  return ids;
+}
+function checarDesafios() {
+  P.arenas.forEach((a, i) => {
+    if (!a.desafio || !a.foi || a.feito || !a.ids) return;
+    if (a.ids.some(id => P.ini.has(id))) return;
+    if (--a.ondas > 0) { a.ids = ondaDesafio(a, Math.max(1, jogadoresOnline().length)); return; }
+    a.feito = true;
+    const bau = [...P.obj.values()].find(e => e.t === 'bau' && e.arena === i);
+    if (bau) { P.obMeus.push(-bau.id); destrancar(bau); }
+  });
+}
+
+// ---------- objetos: barris, jaulas, baús e o mercador ----------
+function iniciarObjetos(nv) {
+  P.obj = new Map((nv.objetos || []).map(o => [o.id, { ...o, usado: false, hp: o.t === 'jaula' ? 3 : 1, golpe: 0 }]));
+  P.barris = [...P.obj.values()].filter(e => e.t === 'barril');
+  P.obMeus = []; P.obVistos = new Set(); P.atrasos = [];
+  P.desafioAvisado = new Set();
+}
+const caixaObjeto = e => {
+  if (e.usado) return { x: 0, y: 0, w: 0, h: 0 };
+  if (e.t === 'barril') return { x: e.x - 26, y: e.y - 64, w: 52, h: 64 };
+  if (e.t === 'jaula') return { x: e.x - 38, y: e.y - 110, w: 76, h: 110 };
+  return { x: 0, y: 0, w: 0, h: 0 };
+};
+// eu acertei um objeto
+function baterObjeto(e) {
+  if (e.usado || P.status !== 'jogando') return;
+  if (e.t === 'barril') { usarObjeto(e, true); return; }
+  if (e.t === 'jaula') {
+    e.hp--; e.golpe = 0.2; som.acerto(false); faiscas(e.x, e.y - 50, '#c9c9d6', 8);
+    if (e.hp <= 0) usarObjeto(e, true);
+  }
+}
+// valor que chega pela rede: id positivo = usado, negativo = baú destrancado
+function receberObjeto(v) {
+  if (!P.obj || P.obVistos.has(v)) return;
+  P.obVistos.add(v);
+  const e = P.obj.get(Math.abs(v));
+  if (!e) return;
+  if (v < 0) destrancar(e); else if (!e.usado) usarObjeto(e, false);
+}
+function destrancar(e) {
+  if (e.destrancado) return;
+  e.destrancado = true; P.obVistos.add(-e.id);
+  som.bencao(); aviso('Desafio vencido!', 'o baú foi destrancado', 2200);
+  P.fx.push({ tipo: 'anel', x: e.x, y: e.y - 20, t: 0, dur: 0.6, cor: '#ffe28a', raio: 120 });
+}
+function usarObjeto(e, meu) {
+  if (e.usado) return;
+  e.usado = true; P.obVistos.add(e.id);
+  if (meu) P.obMeus.push(e.id);
+  const h = P.eu, valorBase = 1 + 0.2 * (P.andar - 1);
+  if (e.t === 'barril') explodirBarril(e, meu);
+  else if (e.t === 'jaula') {
+    if (e.morto) return;
+    // prisioneiro salvo: todo mundo ganha um pouco de vida e cristais
+    som.cura(); som.bencao();
+    aviso('Prisioneiro salvo!', '+vida e cristais pra todo o grupo', 1800);
+    for (let i = 0; i < 16; i++) P.parts.push({ x: e.x + (Math.random() - 0.5) * 40, y: e.y - Math.random() * 70, vx: 0, vy: -80 - Math.random() * 140, vida: 0.9, max: 0.9, cor: '#ffe9a0', tam: 3, grav: 0 });
+    P.fugitivos = P.fugitivos || []; P.fugitivos.push({ x: e.x, y: e.y, v: e.v, t: 0 });
+    if (!h.caido) { const c = Math.round(h.mhp * 0.2); h.hp = Math.min(h.mhp, h.hp + c); numero(h.x, h.y - h.h - 20, '+' + c, '#9fffb0', true); }
+    const val = Math.round(12 * valorBase);
+    for (let i = 0; i < 4; i++) P.loot.push({ x: e.x, y: e.y - 40, vx: (Math.random() - 0.5) * 260, vy: -260 - Math.random() * 200, t: 0, tipo: 'c', v: Math.ceil(val / 4) });
+  } else if (e.t === 'bau') {
+    e.abertoT = 0; som.cristal(); som.bencao();
+    const val = Math.round((e.tranc ? 90 : 28) * valorBase), n = e.tranc ? 10 : 6;
+    for (let i = 0; i < n; i++) P.loot.push({ x: e.x, y: e.y - 30, vx: (Math.random() - 0.5) * 360, vy: -380 - Math.random() * 260, t: 0, tipo: 'c', v: Math.ceil(val / n) });
+    if (e.tranc || hash(e.id * 17 + P.semente % 977) < 0.35) P.loot.push({ x: e.x, y: e.y - 30, vx: 0, vy: -460, t: 0, tipo: 'p' });
+    if (e.tranc) aviso('Tesouro do desafio!', '', 1500);
+  }
+}
+function explodirBarril(e, meu) {
+  if (!e.usado) { e.usado = true; P.obVistos.add(e.id); if (meu) P.obMeus.push(e.id); }
+  const x = e.x, y = e.y - 24, R = 140;
+  som.explosao(); P.tremor = Math.max(P.tremor, 16); P.paraT = Math.max(P.paraT, 0.06);
+  P.fx.push({ tipo: 'anel', x, y, t: 0, dur: 0.5, cor: '#ffb040', raio: R * 1.3 });
+  P.fx.push({ tipo: 'explosao', x, y, t: 0, dur: 0.55, r: R });
+  for (let i = 0; i < 34; i++) { const a = Math.random() * 7, v = 120 + Math.random() * 520; P.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 200, vida: 0.7, max: 0.7, cor: ['#ffe08a', '#ff7a20', '#ff3a10', '#3a2a2a'][i % 4], tam: 4 + Math.random() * 6, grav: 0.8 }); }
+  // monstros pegos na explosão (quem estourou manda o dano)
+  if (meu) {
+    const h = P.eu;
+    for (const en of [...P.ini.values()]) {
+      if (!(en.hp > 0)) continue;
+      if (Math.hypot(en.x - x, (en.y - en.h / 2) - y) < R + en.w / 2) { h.d = sinal(en.x - x) || 1; golpear(en, 60, 520, true, en.x, en.y - en.h / 2, !DEFS[en.tipo].pesado); }
+    }
+    // reação em cadeia
+    for (const b of P.barris) if (!b.usado && Math.hypot(b.x - e.x, b.y - e.y) < R + 30) P.atrasos.push({ t: 0.16, f: () => usarObjeto(b, true) });
+  }
+  // prisioneiro perto da explosão não resiste
+  for (const j of P.obj.values()) if (j.t === 'jaula' && !j.usado && Math.hypot(j.x - x, j.y - e.y) < R) {
+    j.usado = true; j.morto = true; P.obVistos.add(j.id);
+    aviso('Cuidado com os prisioneiros!', 'a explosão acertou um deles', 1800); som.morte?.();
+  }
+  // e o meu herói, se estiver perto
+  const h = P.eu;
+  if (Math.hypot(h.x - x, (h.y - 34) - y) < R * 0.85) ferirHeroi(Math.round(16 * P.mult.dano), sinal(h.x - x));
+}
+function atualizarObjetos(dt) {
+  const h = P.eu;
+  for (const a of P.atrasos) a.t -= dt;
+  const prontos = P.atrasos.filter(a => a.t <= 0); P.atrasos = P.atrasos.filter(a => a.t > 0);
+  for (const a of prontos) a.f();
+  let perto = null;
+  for (const e of P.obj.values()) {
+    e.golpe = Math.max(0, e.golpe - dt);
+    if (e.abertoT !== undefined) e.abertoT += dt;
+    const dx = Math.abs(e.x - h.x), dy = Math.abs(e.y - h.y);
+    e.perto = dx < 260 && dy < 160;
+    if (e.t === 'bau' && !e.usado && !h.caido && dx < 44 && dy < 50) {
+      if (e.tranc && !e.destrancado) { if (!e.avisou) { e.avisou = true; aviso('Baú trancado', 'vença o desafio desta sala', 1600); } }
+      else usarObjeto(e, true);
+    }
+    if (e.t === 'mercador') { e.perto = dx < 90 && dy < 80; if (e.perto) perto = e; }
+  }
+  // aviso de sala de desafio (pra todo mundo)
+  P.arenas.forEach((a, i) => {
+    if (!a.desafio || P.desafioAvisado.has(i)) return;
+    if (h.x > a.x0 + T * 3 && h.x < a.x1 - T * 3 && Math.abs(h.y - a.y) < T * 3) { P.desafioAvisado.add(i); aviso('Sala de Desafio!', 'derrote as duas ondas e abra o baú', 2200); }
+  });
+  for (const f of P.fugitivos || []) { f.t += dt; f.x -= 260 * dt; }
+  if (P.fugitivos) P.fugitivos = P.fugitivos.filter(f => f.t < 2.5);
+  const bl = $('#bLoja');
+  if (bl.hidden === !!perto) bl.hidden = !perto;
+  if (perto && consumir('usar', 200)) abrirLoja();
+}
+
+// ---------- loja do mercador ----------
+const LOJA = [
+  { id: 'pocao', ic: '🧪', nome: 'Poção', txt: 'enche 1 frasco', preco: 30, pode: h => h.pocoes < h.pocoesMax, f: h => { h.pocoes++; } },
+  { id: 'cura', ic: '💖', nome: 'Cura completa', txt: 'volta toda a vida', preco: 45, pode: h => h.hp < h.mhp, f: h => { h.hp = h.mhp; } },
+  { id: 'bencao', ic: '🔮', nome: 'Bênção misteriosa', txt: 'uma bênção do altar, sorteada', preco: 110, pode: () => true, f: h => {
+    const ops = BENCAOS.filter(b => b.id !== 'elixir'), b = ops[Math.floor(Math.random() * ops.length)];
+    b.f(h); h.bencaos.push(b.id); aviso(`${b.ic} ${b.nome}`, b.txt, 2000);
+  } },
+];
+const precoLoja = it => Math.round(it.preco * (1 + 0.25 * (P.ciclo - 1)));
+function abrirLoja() {
+  if (!P || G.tela !== 'jogo') return;
+  if (G.modo === 'solo') G.pausado = true;
+  ctrl.esq = ctrl.dir = false;
+  montarLoja(); som.portal();
+  mostrar('telaLoja');
+}
+function montarLoja() {
+  const h = P.eu, box = $('#lojaItens'); box.innerHTML = '';
+  $('#lojaCristais').textContent = h.cristais;
+  for (const it of LOJA) {
+    const pr = precoLoja(it), el = document.createElement('button');
+    el.className = 'bencao'; el.disabled = h.cristais < pr || !it.pode(h);
+    el.innerHTML = `<span class="ic">${it.ic}</span><b>${it.nome}</b><small>${it.txt}</small><small class="preco">${pr} 💎</small>`;
+    el.onclick = () => { if (h.cristais < pr || !it.pode(h)) return; h.cristais -= pr; it.f(h); som.cristal(); atualizarBotoesHud(); montarLoja(); };
+    box.appendChild(el);
+  }
+}
+$('#bLoja').onclick = () => abrirLoja();
+$('#bFecharLoja').onclick = () => { G.pausado = false; mostrar(null); ultimo = performance.now(); };
+
 function prepararArte() {
   if (!P) return;
   P.fundo = criarFundo(P.bioma, cv.width, cv.height, P.semente + P.andar);
@@ -242,12 +423,12 @@ function virarHost() {
 
 // ---------- rede: monstros ----------
 const nE = e => ESTADOS.indexOf(e), nT = t => TIPOS.indexOf(t);
-const ATQ_CHEFE = ['espinhos', 'investida', 'rajada', 'invocar'];
+const ATQ_CHEFE = ['espinhos', 'investida', 'rajada', 'invocar', ...ATAQUES3];
 function enviarInimigos() {
   const e = [];
-  for (const en of P.ini.values()) e.push([en.id, nT(en.tipo), Math.round(en.x), Math.round(en.y), Math.max(0, Math.round(en.hp)), en.mhp, en.d, nE(en.estado), Math.round(en.tE * 100), en.ac, en.tipo === 'chefe' ? ATQ_CHEFE.indexOf(en.ataque) : -1, en.elite ? 1 : 0, Math.max(0, Math.round(en.arm)), en.marm, Math.round((en.atordT || 0) * 10)]);
+  for (const en of P.ini.values()) e.push([en.id, nT(en.tipo), Math.round(en.x), Math.round(en.y), Math.max(0, Math.round(en.hp)), en.mhp, en.d, nE(en.estado), Math.round(en.tE * 100), en.ac, DEFS[en.tipo].chefe ? ATQ_CHEFE.indexOf(en.ataque) : -1, en.elite ? 1 : 0, Math.max(0, Math.round(en.arm)), en.marm, Math.round((en.atordT || 0) * 10), Math.round((en.gelo || 0) * 10), en.queima > 0 ? 1 : 0]);
   const p = P.proj.map(q => [q.id, Math.round(q.x), Math.round(q.y), Math.round(q.vx), Math.round(q.vy), q.tipo, q.dano]);
-  const z = P.zonas.map(q => [q.id, Math.round(q.x), Math.round(q.y), q.espera, q.dur, q.dano, Math.round((P.t - q.criado) * 1000)]);
+  const z = P.zonas.map(q => [q.id, Math.round(q.x), Math.round(q.y), q.espera, q.dur, q.dano, Math.round((P.t - q.criado) * 1000), q.tipo || 0]);
   rede.enviarInimigos(G.codigo, { an: P.andar, sm: P.semente, e, p: p.length ? p : 0, z: z.length ? z : 0, m: [...P.visto].slice(-40) });
 }
 function receberInimigos(s) {
@@ -255,7 +436,7 @@ function receberInimigos(s) {
   P.recebeuIni = true;
   const vivos = new Set();
   for (const a of s.e || []) {
-    const [id, ti, x, y, hp, mhp, d, es, tE, ac, atq, el, arm, marm, at10] = a;
+    const [id, ti, x, y, hp, mhp, d, es, tE, ac, atq, el, arm, marm, at10, gel, qm] = a;
     vivos.add(id);
     let r = P.ini.get(id);
     if (!r) {
@@ -266,6 +447,7 @@ function receberInimigos(s) {
       if (P.recebeuIni && P.t > 2) P.fx.push({ tipo: 'runa', x, y: y - 50, t: 0, dur: 0.6 });
     }
     r.tx = x; r.ty = y; r.hp = hp; r.mhp = mhp; r.d = d; r.ac = ac; r.ataque = ATQ_CHEFE[atq];
+    r.gelo = (gel || 0) / 10; r.queima = qm ? Math.max(r.queima || 0, 0.6) : 0;
     if (r.arm > 0 && arm <= 0 && marm > 0) efeitoQuebra(r);
     r.arm = arm || 0; r.marm = marm || 0; r.atordT = (at10 || 0) / 10; if (arm <= 0 && marm > 0) r.armT = r.armT || 6;
     const novoEstado = ESTADOS[es];
@@ -286,9 +468,9 @@ function receberInimigos(s) {
   // zonas do chefe
   const zv = new Set();
   for (const q of s.z || []) {
-    const [id, x, y, espera, dur, dano, idade] = q;
+    const [id, x, y, espera, dur, dano, idade, tipo] = q;
     zv.add(id);
-    if (!P.zonas.find(o => o.id === id)) P.zonas.push({ id, x, y, espera, dur, dano, criado: P.t - idade / 1000 });
+    if (!P.zonas.find(o => o.id === id)) P.zonas.push({ id, x, y, espera, dur, dano, tipo: tipo || undefined, criado: P.t - idade / 1000 });
   }
   P.zonas = P.zonas.filter(o => zv.has(o.id) || P.t - o.criado < o.espera + o.dur);
 }
@@ -301,9 +483,9 @@ function aplicarGolpesRemotos(golpes) {
       const k = +n;
       if (k <= ult || !Array.isArray(g)) continue;
       max = Math.max(max, k);
-      for (const [id, dano, kb, forte, lanca] of g) {
+      for (const [id, dano, kb, forte, lanca, ef] of g) {
         const en = P.ini.get(id);
-        if (en) ferirInimigo(en, dano, kb, !!forte, false, !!lanca);
+        if (en) { ferirInimigo(en, dano, kb, !!forte, false, !!lanca); if (ef && P.ini.has(id)) aplicarEfeito(en, ef, dano); }
       }
     }
     P.golpeUlt[u] = max;
@@ -332,8 +514,30 @@ function ferirInimigo(en, dano, kbx, forte, meu, lanca) {
   if (!d.voa && !pesado) en.vy = -110 * (forte ? 1.6 : 0.5);
   if (!pesado && (forte || en.estado !== 'golpe')) { if (en.estado !== 'atordoado' || !(en.atordT > 0.5)) en.atordT = 0; en.estado = 'atordoado'; en.tE = 0; }
 }
+// feitiços: 1 = congelado (não anda nem ataca) · 2 = queimando (perde vida aos poucos)
+function aplicarEfeito(en, ef, dano) {
+  const chefao = DEFS[en.tipo].chefe;
+  if (ef === 1) {
+    en.gelo = chefao ? 0.7 : 3.5;
+    en.estado = 'atordoado'; en.tE = 0; en.atordT = en.gelo; en.vx = 0;
+  } else if (ef === 2) {
+    en.queima = 4; en.queimaT = 0; en.queimaDano = Math.max(2, Math.round(dano * 0.22));
+  }
+}
+function tickEfeitos(en, dt) {
+  if (en.gelo > 0) en.gelo = Math.max(0, en.gelo - dt);
+  if (en.queima > 0) {
+    en.queima -= dt; en.queimaT = (en.queimaT || 0) + dt;
+    if (P.host && en.queimaT >= 0.5) {
+      en.queimaT = 0; en.hp -= en.queimaDano || 4; en.flash = 0.06;
+      numero(en.x, en.y - en.h - 4, en.queimaDano || 4, '#ffa040', false);
+      if (en.hp <= 0) { matarInimigo(en); return true; }
+    }
+  }
+  return false;
+}
 function quebrarArmadura(en) {
-  en.arm = 0; en.armT = 6; en.estado = 'atordoado'; en.tE = 0; en.atordT = en.tipo === 'chefe' ? 2.4 : 1.8; en.vx = 0;
+  en.arm = 0; en.armT = 6; en.estado = 'atordoado'; en.tE = 0; en.atordT = DEFS[en.tipo].chefe ? 2.4 : 1.8; en.vx = 0;
   efeitoQuebra(en);
 }
 function efeitoQuebra(en) {
@@ -343,7 +547,7 @@ function efeitoQuebra(en) {
   P.tremor = Math.max(P.tremor, 12); P.paraT = Math.max(P.paraT, 0.12);
   som.quebraArmadura();
 }
-function golpear(en, base, kb, forte, x, y, lanca = false, deEco = false) {
+function golpear(en, base, kb, forte, x, y, lanca = false, deEco = false, ef = 0) {
   const h = P.eu, C = CLASSES[h.classe];
   // contador de combo: cada acerto seguido aumenta o dano (até +30%)
   const cb = P.cmb; cb.n++; cb.t = 1.8; cb.pulso = 1; if (cb.n > cb.max) cb.max = cb.n;
@@ -371,9 +575,10 @@ function golpear(en, base, kb, forte, x, y, lanca = false, deEco = false) {
   if (!deEco && forte && h.atk && (h.atk.especial || h.combo === C.ataques.length - 1 || crit)) esp.impacto(x ?? en.x, y ?? en.y - en.h / 2, 1);
   const rouba = (C.rouba || 0) + h.mods.rouba;
   if (rouba > 0 && !h.caido) h.hp = Math.min(h.mhp, h.hp + dano * rouba);
-  if (P.host) ferirInimigo(en, dano, kx, forte, true, lanca);
+  if (P.host) { ferirInimigo(en, dano, kx, forte, true, lanca); if (ef) aplicarEfeito(en, ef, dano); }
   else {
-    P.golpeFila.push([en.id, dano, Math.round(kx), forte ? 1 : 0, lanca ? 1 : 0]); en.hp -= dano;
+    P.golpeFila.push(ef ? [en.id, dano, Math.round(kx), forte ? 1 : 0, lanca ? 1 : 0, ef] : [en.id, dano, Math.round(kx), forte ? 1 : 0, lanca ? 1 : 0]); en.hp -= dano;
+    if (ef === 1) en.gelo = DEFS[en.tipo].chefe ? 0.7 : 3.5; else if (ef === 2) en.queima = 4;
     if (en.arm > 0) { en.arm -= dano; if (en.arm <= 0) efeitoQuebra(en); }
   }
 }
@@ -384,11 +589,12 @@ function matarInimigo(en) {
   const d = DEFS[en.tipo];
   const cx = en.x, cy = (en.ty ?? en.y) - en.h / 2;
   som.quebra();
-  for (let i = 0; i < (en.tipo === 'chefe' ? 80 : 22); i++) {
+  const ehChefao = !!d.chefe;
+  for (let i = 0; i < (ehChefao ? 80 : 22); i++) {
     const a = Math.random() * 7, v = 120 + Math.random() * 380;
     P.parts.push({ x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 200, vida: 0.9 + Math.random() * 0.5, max: 1.4, cor: P.bioma.cristal[Math.floor(Math.random() * 2)], tam: 3 + Math.random() * 5, grav: 1, caco: true, rot: Math.random() * 6 });
   }
-  P.tremor = Math.max(P.tremor, en.tipo === 'chefe' ? 22 : 6);
+  P.tremor = Math.max(P.tremor, ehChefao ? 22 : 6);
   P.eu.mortos++;
   esp.aoMatar(en);
   if (en.elite || DEFS[en.tipo].pesado) esp.impacto(cx, cy, 2);
@@ -397,10 +603,10 @@ function matarInimigo(en) {
   const n = Math.min(8, valor);
   for (let i = 0; i < n; i++) P.loot.push({ x: cx, y: cy, vx: (Math.random() - 0.5) * 300, vy: -200 - Math.random() * 300, t: 0, tipo: 'c', v: Math.ceil(valor / n) });
   const sorte = hash(en.id * 31 + P.andar * 1009 + P.semente % 1000);
-  if (sorte < (['golem', 'automato'].includes(en.tipo) ? 0.35 : en.tipo === 'chefe' ? 1 : en.tipo === 'escaravelho' ? 0.03 : 0.09)) P.loot.push({ x: cx, y: cy, vx: 0, vy: -380, t: 0, tipo: 'p' });
-  if (en.tipo === 'chefe') {
-    P.chefeMorto = true;
-    aviso('O Guardião caiu!', 'o Trono do Prisma é seu', 3500);
+  if (sorte < (['golem', 'automato'].includes(en.tipo) ? 0.35 : ehChefao ? 1 : en.tipo === 'escaravelho' ? 0.03 : 0.09)) P.loot.push({ x: cx, y: cy, vx: 0, vy: -380, t: 0, tipo: 'p' });
+  if (ehChefao) {
+    P.chefeMorto = true; G.ultimoChefe = d.nome;
+    aviso(`${d.nome} caiu!`, `${d.arena || 'a arena'} é sua`, 3500);
     if (P.host) setTimeout(() => { if (P && P.chefeMorto) mudarMeta({ status: 'vitoria' }); }, 3200);
   }
 }
@@ -491,10 +697,141 @@ function efeitoHab(tipo, x, y, d, meu, cor) {
   }
 }
 
+// ---------- feitiços desenhados (Mago / Maga) ----------
+// O dedo (ou o mouse) desenha na tela: zigue-zague = raio em cadeia · círculo = congela · linha = lança de fogo.
+const DESENHO = { pts: null, id: null, runa: null };
+const podeDesenhar = () => P && !trilho.ativo() && G.tela === 'jogo' && P.eu.classe === 'mago' && !P.eu.caido && P.status === 'jogando';
+function telaParaMundo(q) { return { x: P.cam.x + q.x * DPR / ESC, y: P.cam.y + q.y * DPR / ESC }; }
+cv.addEventListener('pointerdown', e => {
+  if (!podeDesenhar() || DESENHO.pts || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  DESENHO.pts = [{ x: e.clientX, y: e.clientY }]; DESENHO.id = e.pointerId;
+  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+  e.preventDefault();
+});
+cv.addEventListener('pointermove', e => {
+  if (!DESENHO.pts || e.pointerId !== DESENHO.id) return;
+  const u = DESENHO.pts[DESENHO.pts.length - 1];
+  if (Math.hypot(e.clientX - u.x, e.clientY - u.y) > 3) DESENHO.pts.push({ x: e.clientX, y: e.clientY });
+  if (DESENHO.pts.length > 400) DESENHO.pts.shift();
+});
+const fimDesenho = e => {
+  if (!DESENHO.pts || e.pointerId !== DESENHO.id) return;
+  const pts = DESENHO.pts; DESENHO.pts = null; DESENHO.id = null;
+  if (podeDesenhar() && pts.length >= 6) lancarFeitico(pts);
+};
+cv.addEventListener('pointerup', fimDesenho); cv.addEventListener('pointercancel', fimDesenho);
+cv.addEventListener('touchstart', e => { if (podeDesenhar()) e.preventDefault(); }, { passive: false });
+
+function lancarFeitico(ptsTela) {
+  const h = P.eu;
+  if (!h.feitCd) h.feitCd = { raio: 0, gelo: 0, fogo: 0 };
+  const tipo = reconhecer(ptsTela);
+  if (!tipo) { som.runaFalhou(); DESENHO.runa = { pts: ptsTela, t: 0, cor: '#8a8aa0', nome: '' }; return; }
+  if (h.feitCd[tipo] > 0) {
+    som.runaFalhou(); DESENHO.runa = { pts: ptsTela, t: 0, cor: '#8a8aa0', nome: `espere ${Math.ceil(h.feitCd[tipo])}s` };
+    return;
+  }
+  h.feitCd[tipo] = FEIT[tipo].cd * h.mods.cd; h.dicaFeit = true;
+  DESENHO.runa = { pts: ptsTela, t: 0, cor: FEIT[tipo].cor, nome: FEIT[tipo].nome };
+  som.runa(); esp.ganharEspecial(3);
+  const pts = ptsTela.map(telaParaMundo);
+  const cx = pts.reduce((a, q) => a + q.x, 0) / pts.length, cy = pts.reduce((a, q) => a + q.y, 0) / pts.length;
+  h.d = sinal(cx - h.x) || h.d;
+  h.habT = h.habDur = 0.3; h.anim = 'hab';
+  const naTela = (x, y) => x > P.cam.x - 80 && x < P.cam.x + VW + 80 && y > P.cam.y - 80 && y < P.cam.y + VISTA_H + 80;
+  const vivos = [...P.ini.values()].filter(en => en.hp > 0 && naTela(en.x, en.y));
+  const centro = en => ({ x: en.x, y: en.y - en.h / 2 });
+  let dados = [];
+  if (tipo === 'raio') {
+    // cai no monstro mais perto do desenho e pula pros vizinhos
+    const lista = vivos.map(en => ({ en, c: centro(en) }));
+    lista.sort((a, b) => Math.hypot(a.c.x - cx, a.c.y - cy) - Math.hypot(b.c.x - cx, b.c.y - cy));
+    const cadeia = [];
+    if (lista.length && Math.hypot(lista[0].c.x - cx, lista[0].c.y - cy) < 520) cadeia.push(lista.shift());
+    while (cadeia.length && cadeia.length < 6 && lista.length) {
+      const u = cadeia[cadeia.length - 1].c;
+      lista.sort((a, b) => Math.hypot(a.c.x - u.x, a.c.y - u.y) - Math.hypot(b.c.x - u.x, b.c.y - u.y));
+      if (Math.hypot(lista[0].c.x - u.x, lista[0].c.y - u.y) > 360) break;
+      cadeia.push(lista.shift());
+    }
+    const danos = [34, 28, 24, 20, 17, 15];
+    cadeia.forEach((q, k) => golpear(q.en, danos[k], 120, k === 0, q.c.x, q.c.y));
+    const alvos = cadeia.length ? cadeia.map(q => q.c) : [{ x: cx, y: cy }];
+    for (const b of P.barris || []) if (!b.usado && alvos.some(q => Math.hypot(q.x - b.x, q.y - (b.y - 24)) < 120)) explodirBarril(b, true);
+    dados = alvos.flatMap(q => [Math.round(q.x), Math.round(q.y)]);
+    P.tremor = Math.max(P.tremor, 12);
+  } else if (tipo === 'gelo') {
+    let raio = pts.reduce((a, q) => a + Math.hypot(q.x - cx, q.y - cy), 0) / pts.length;
+    raio = Math.max(70, raio * 1.25);
+    for (const en of vivos) { const c2 = centro(en); if (Math.hypot(c2.x - cx, c2.y - cy) < raio + Math.max(en.w, en.h) * 0.35) golpear(en, 12, 0, false, c2.x, c2.y, false, false, 1); }
+    // apaga os disparos inimigos que estão dentro do círculo
+    for (const q of P.proj) if (Math.hypot(q.x - cx, q.y - cy) < raio) { P.projRemovidos.add(q.id); faiscas(q.x, q.y, '#bff4ff', 6); }
+    dados = [Math.round(cx), Math.round(cy), Math.round(raio)];
+    P.tremor = Math.max(P.tremor, 6);
+  } else {
+    const lin = reamostrar(pts, 16);
+    for (const en of vivos) {
+      const r = { x: en.x - en.w / 2 - 12, y: en.y - en.h - 12, w: en.w + 24, h: en.h + 24 };
+      if (lin.some((q, i) => i && segToca(lin[i - 1], q, r))) { const c2 = centro(en); golpear(en, 30, 160, true, c2.x, c2.y, false, false, 2); }
+    }
+    for (const b of P.barris || []) if (!b.usado && lin.some(q => Math.hypot(q.x - b.x, q.y - (b.y - 24)) < 50)) explodirBarril(b, true);
+    dados = lin.flatMap(q => [Math.round(q.x), Math.round(q.y)]);
+    P.tremor = Math.max(P.tremor, 8);
+  }
+  h.fxId++; h.fx = [h.fxId, 'f_' + tipo, Math.round(h.x), Math.round(h.y), h.d, ...dados];
+  efeitoFeitico(tipo, dados, true);
+}
+// segmento a-b encosta no retângulo r?
+function segToca(a, b, r) {
+  const n = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 10));
+  for (let i = 0; i <= n; i++) { const x = lerp(a.x, b.x, i / n), y = lerp(a.y, b.y, i / n); if (x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h) return true; }
+  return false;
+}
+// o efeito visual do feitiço (o meu e o dos amigos)
+function efeitoFeitico(tipo, d, meu) {
+  if (!P || !d) return;
+  if (tipo === 'raio') {
+    const pts = []; for (let i = 0; i + 1 < d.length; i += 2) pts.push({ x: d[i], y: d[i + 1] });
+    if (!pts.length) return;
+    P.fx.push({ tipo: 'relampago', pts, t: 0, dur: 0.45 });
+    for (const q of pts) faiscas(q.x, q.y, '#dff8ff', 10);
+    som.trovao();
+  } else if (tipo === 'gelo') {
+    const [x, y, r] = d;
+    P.fx.push({ tipo: 'geada', x, y, r, t: 0, dur: 0.7, seed: Math.random() });
+    for (let i = 0; i < 24; i++) { const a = Math.random() * 7, v = r * (1.5 + Math.random() * 2); P.fx.push({ tipo: 'floco', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, dur: 0.6 + Math.random() * 0.4, tam: 3 + Math.random() * 4 }); }
+    som.gelo();
+  } else if (tipo === 'fogo') {
+    const pts = []; for (let i = 0; i + 1 < d.length; i += 2) pts.push({ x: d[i], y: d[i + 1] });
+    if (pts.length < 2) return;
+    P.fx.push({ tipo: 'lanca', pts, t: 0, dur: 0.75 });
+    for (const q of pts) P.parts.push({ x: q.x, y: q.y, vx: (Math.random() - 0.5) * 80, vy: -120 - Math.random() * 160, vida: 0.6, max: 0.6, cor: Math.random() < 0.5 ? '#ffb040' : '#ff5a20', tam: 4, grav: 0 });
+    som.fogo();
+  }
+}
+function desenharDesenho(c) {
+  const d = DESENHO;
+  c.save(); c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (d.pts) desenharRastro(c, d.pts, '#d6b3ff');
+  if (d.runa) {
+    const k = d.runa.t / 0.7;
+    desenharRastro(c, d.runa.pts, d.runa.cor, 1 - k);
+    if (d.runa.nome) {
+      const xs = d.runa.pts.map(q => q.x), ys = d.runa.pts.map(q => q.y);
+      c.globalAlpha = 1 - k; c.font = '900 16px Cinzel, serif'; c.textAlign = 'center'; c.fillStyle = d.runa.cor;
+      c.shadowColor = '#000'; c.shadowBlur = 6;
+      c.fillText(d.runa.nome, (Math.min(...xs) + Math.max(...xs)) / 2, Math.min(...ys) - 14 - k * 16);
+    }
+  }
+  c.restore();
+}
+
 // ---------- atualização do herói local ----------
 function atualizarEu(dt) {
   const h = P.eu, C = CLASSES[h.classe], nv = P.nv;
   for (const k of ['comboT', 'habCd', 'rolarCd', 'invT', 'feridoT', 'coyote', 'descerT', 'furiaT']) h[k] = Math.max(0, h[k] - dt);
+  if (h.feitCd) for (const k in h.feitCd) h.feitCd[k] = Math.max(0, h.feitCd[k] - dt);
+  if (DESENHO.runa && (DESENHO.runa.t += dt) > 0.7) DESENHO.runa = null;
   if (h.caido) {
     h.anim = 'caido'; h.vx *= Math.pow(0.01, dt); h.grav = 1; h.descer = false;
     moverCorpo(h, dt, nv);
@@ -588,6 +925,7 @@ function atualizarEu(dt) {
         if (h.acertados.has(en.id) || !(en.hp > 0)) continue;
         if (toca(cx, corpo(en))) { h.acertados.add(en.id); golpear(en, at.dano, at.kb, !!at.forte, clamp(en.x, cx.x, cx.x + cx.w), clamp(en.y - en.h / 2, cx.y, cx.y + cx.h), !!at.lanca); }
       }
+      for (const e of P.obj.values()) if (!h.acertados.has('o' + e.id) && toca(cx, caixaObjeto(e))) { h.acertados.add('o' + e.id); baterObjeto(e); }
     }
     if (h.atkT >= dur) { h.atk = null; h.comboT = 0.32; if (h.combo === ats.length - 1) h.comboT = 0; }
   }
@@ -678,11 +1016,22 @@ function atualizarEu(dt) {
   }
   for (const q of P.proj) {
     if (P.projRemovidos.has(q.id)) continue;
-    if (Math.abs(q.x - h.x) < 18 && q.y > h.y - h.h && q.y < h.y) {
+    if (projAcerta(q, h.x, h.y, h.h)) {
       P.projRemovidos.add(q.id); ferirHeroi(q.dano, sinal(q.vx));
       faiscas(q.x, q.y, '#ff4d6d', 8);
     }
   }
+  // armadilhas do cenário (cada um confere só o próprio herói)
+  for (const a of nv.armadilhas || []) {
+    if (Math.abs(a.x - h.x) > 700) continue;
+    const r = perigoArmadilha(a, P.t);
+    if (r && toca(r, meuCorpo)) {
+      const kb = a.t === 'pendulo' ? r.kb : a.t === 'dardo' ? a.d : sinal(h.x - a.x);
+      ferirHeroi(Math.round(14 * P.mult.dano), kb);
+      if (a.t === 'vapor' || a.t === 'espinho') h.vy = Math.min(h.vy, -520);
+    }
+  }
+  atualizarObjetos(dt);
   // portal
   const pt = nv.portal;
   h.naPorta = !!pt && Math.abs(h.x - pt.x) < 50 && Math.abs(h.y - pt.y) < 60;
@@ -778,6 +1127,11 @@ function atualizarEfeitos(dt) {
       if (Math.random() < 0.9) P.parts.push({ x: s.x - s.vx * 0.02 + (Math.random() - 0.5) * s.raio, y: s.y + (Math.random() - 0.5) * s.raio * 1.4, vx: s.vx * 0.08, vy: -60 + Math.random() * 80, vida: 0.4, max: 0.4, cor: Math.random() < 0.5 ? '#ff2a4a' : '#9a0020', tam: 2 + Math.random() * 3, grav: 900 });
     } else if (Math.random() < 0.7) P.parts.push({ x: s.x, y: s.y + (Math.random() - 0.5) * 8, vx: -s.vx * 0.05, vy: 0, vida: 0.25, max: 0.25, cor: '#c79bff', tam: s.raio * 0.4, grav: 0 });
     if (solido(nv, s.x, s.y)) { s.vida = 0; faiscas(s.x, s.y, corT, 6); continue; }
+    for (const e of P.obj.values()) {
+      if (s.acertados.has('o' + e.id)) continue;
+      const b = caixaObjeto(e);
+      if (b.w && s.x + s.raio > b.x && s.x - s.raio < b.x + b.w && s.y + s.raio > b.y && s.y - s.raio < b.y + b.h) { s.acertados.add('o' + e.id); baterObjeto(e); if (!s.perfura) s.vida = 0; }
+    }
     for (const en of P.ini.values()) {
       if (s.acertados.has(en.id) || !(en.hp > 0)) continue;
       const b = corpo(en);
@@ -799,6 +1153,7 @@ function atualizarEfeitos(dt) {
       if (m.meu) for (const en of P.ini.values()) {
         if (Math.abs(en.x - m.alvoX) < 80 && Math.abs((en.y - en.h / 2) - (m.alvoY - 30)) < 110) { h.d = sinal(en.x - m.alvoX) || 1; golpear(en, 27, 220, true); }
       }
+      if (m.meu) for (const e of P.obj.values()) if (e.t === 'barril' && Math.abs(e.x - m.alvoX) < 80 && Math.abs(e.y - m.alvoY) < 90) baterObjeto(e);
     }
   }
   P.meteoros = P.meteoros.filter(m => m.t < m.dur + 0.05);
@@ -849,10 +1204,12 @@ function atualizarOutros(dt) {
       const at = C && C.ataques[st.cb || 0];
       if (at && st.a === 'atacar' && !at.tiro) efeitoCorte(st.x, st.y, st.d, at, C.cor, st.cb);
     }
+    if (st.ob) for (const v of st.ob) receberObjeto(v);
     if (st.fx && st.fx[0] !== o.fxId) {
       o.fxId = st.fx[0];
       const [, tipo, fx, fy, fd] = st.fx;
       if (tipo.startsWith('esp_')) esp.efeitoEspecial(tipo.slice(4), fx, fy, fd, false);
+      else if (tipo.startsWith('f_')) efeitoFeitico(tipo.slice(2), st.fx.slice(5), false);
       else efeitoHab(tipo, fx, fy, fd, false);
       if (tipo === 'luz' && Math.hypot(fx - P.eu.x, fy - P.eu.y) < 270) {
         const h = P.eu;
@@ -869,7 +1226,7 @@ function meuEstado() {
     cb: h.combo, ak: h.ak, c: h.classe, s: h.sexo, n: G.nome || 'Herói', hp: Math.round(h.hp), mhp: h.mhp, cai: h.caido, por: h.naPorta,
     and: P.andar, fu: h.furiaT > 0, ch: h.noChao ? 1 : 0, rv: Math.round(h.reviveT * 10) / 10,
     ps: P.tiros.length ? P.tiros.map(s => [Math.round(s.x), Math.round(s.y), Math.round(s.vx), s.raio, Math.round(s.vy || 0), s.sangue ? 1 : 0]) : 0,
-    fx: h.fx || 0, t: rede.agora(),
+    fx: h.fx || 0, ob: P.obMeus.length ? P.obMeus : 0, t: rede.agora(),
   };
 }
 
@@ -885,14 +1242,18 @@ function simularHost(dt) {
     invocar: (tipo, x, y) => { const id = ++P.nextId; P.ini.set(id, criarInimigo({ id, tipo, x, y }, P.mult)); P.fx.push({ tipo: 'runa', x, y: y - 50, t: 0, dur: 0.6 }); },
     fx: (tipo, x, y) => {
       if (tipo === 'tremor') { P.tremor = Math.max(P.tremor, 10); som.tremor(); }
+      if (tipo === 'morcegos' || tipo === 'areia') for (let i = 0; i < 22; i++) { const a = Math.random() * 7, v = 60 + Math.random() * 200; P.parts.push({ x, y: y + (Math.random() - 0.5) * 80, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60, vida: 0.6, max: 0.6, cor: tipo === 'areia' ? 'rgba(232,194,122,.8)' : 'rgba(255,40,70,.7)', tam: 4 + Math.random() * 6, grav: tipo === 'areia' ? 0.6 : 0 }); }
       if (tipo === 'piscar') for (let i = 0; i < 14; i++) { const a = Math.random() * 7; P.parts.push({ x, y: y + (Math.random() - 0.5) * 50, vx: Math.cos(a) * 80, vy: Math.sin(a) * 80 - 30, vida: 0.5, max: 0.5, cor: 'rgba(180,190,200,.5)', tam: 8 + Math.random() * 8, grav: 0 }); }
     },
   };
   for (const z of P.zonas) if (z.criado === undefined) z.criado = P.t;
   checarEmboscadas(jogs);
+  checarDesafios();
   for (const en of [...P.ini.values()]) {
     const perto = jogs.some(j => Math.abs(j.x - en.x) < VW * 0.9 + 300 && Math.abs(j.y - en.y) < 900);
-    if (!perto && en.tipo !== 'chefe') continue;
+    if (!perto && !DEFS[en.tipo].chefe) continue;
+    if (tickEfeitos(en, dt)) continue;
+    if (en.gelo > 0) { en.vx = 0; if (!DEFS[en.tipo].voa) moverCorpo(en, dt, P.nv); continue; }
     atualizarInimigo(en, dt, mundo);
     if (en.y > P.nv.h * T + 200) { en.hp = 0; matarInimigo(en); }
   }
@@ -901,15 +1262,33 @@ function simularHost(dt) {
   for (const q of P.proj) {
     q.x += q.vx * dt; q.y += q.vy * dt; q.vida -= dt;
     if (solido(P.nv, q.x, q.y)) q.vida = 0;
-    for (const j of jogs) if (j.vivo && Math.abs(q.x - j.x) < 18 && q.y > j.y - 68 && q.y < j.y) q.vida = 0;
+    for (const j of jogs) if (j.vivo && projAcerta(q, j.x, j.y, 68)) q.vida = 0;
   }
   P.proj = P.proj.filter(q => q.vida > 0 && !P.projRemovidos.has(q.id));
   P.zonas = P.zonas.filter(z => P.t - z.criado < z.espera + z.dur + 0.2);
+}
+// som de cada ataque dos chefões (toca em todos os celulares, quando o golpe sai)
+const SOM_ATQ = {
+  garra: () => som.golpe(true), onda: () => som.disparoInimigo(), chuva: () => som.fogo(), morcegos: () => som.runa(),
+  vapor: () => som.gelo(), serras: () => som.disparoInimigo(), punho: () => som.explosao(), pisao: () => som.tremor(),
+  areia: () => som.fogo(), lancas: () => som.disparo(), sombra: () => som.golpe(true), escaravelhos: () => som.runa(),
+};
+function sonsChefes() {
+  for (const en of P.ini.values()) {
+    if (!DEFS[en.tipo].chefe) continue;
+    const k = en.estado + en.ac;
+    if (en._somK === k) continue;
+    const novoGolpe = en.estado === 'golpe' && en._somK !== undefined;
+    en._somK = k;
+    if (novoGolpe && SOM_ATQ[en.ataque]) SOM_ATQ[en.ataque]();
+    if (en.hp < en.mhp * 0.5 && !en._somF2) { en._somF2 = true; som.chefe(); aviso('Enfurecido!', DEFS[en.tipo].nome, 1600); }
+  }
 }
 function simularReplicas(dt) {
   for (const r of P.ini.values()) {
     r.x = lerp(r.x, r.tx, Math.min(1, dt * 12)); r.y = lerp(r.y, r.ty, Math.min(1, dt * 12));
     r.tE = (r.tE || 0) + dt; r.flash = Math.max(0, (r.flash || 0) - dt);
+    tickEfeitos(r, dt);
   }
   for (const q of P.proj) { q.x += q.vx * dt; q.y += q.vy * dt; }
   P.proj = P.proj.filter(q => !P.projRemovidos.has(q.id));
@@ -986,10 +1365,25 @@ function desenhar() {
     if (l.tipo === 'c') cristal(c, l.x, l.y + 6, 13, 7, P.bioma.cristal, Math.sin(t * 5 + l.x) * 0.4);
     else { c.fillStyle = '#9fffb0'; c.strokeStyle = '#140d22'; c.lineWidth = 2; c.beginPath(); c.arc(l.x, l.y, 8, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#6b4a2b'; c.fillRect(l.x - 3, l.y - 13, 6, 5); }
   }
+  // armadilhas e objetos
+  for (const a of nv.armadilhas || []) if (visivel(a.x, a.y, 500)) desenharArmadilha(c, a, P.t, P.bioma);
+  for (const e of P.obj.values()) if (visivel(e.x, e.y)) desenharObjeto(c, e, e, t, P.bioma);
+  for (const f of P.fugitivos || []) {
+    if (f.t > 2.2) continue;
+    c.save(); c.globalAlpha = Math.min(1, (2.2 - f.t) * 2); c.translate(f.x, f.y); c.scale(-1, 1);
+    const ph = f.t * 18;
+    c.strokeStyle = '#140d22'; c.lineWidth = 2; c.fillStyle = ['#6a5a4a', '#4a5a6a', '#6a4a5a'][f.v % 3];
+    c.beginPath(); c.moveTo(-10, -18); c.lineTo(-8, -40); c.lineTo(8, -40); c.lineTo(10, -18); c.closePath(); c.fill(); c.stroke();
+    c.strokeStyle = '#3a2a2a'; c.lineWidth = 4; c.beginPath(); c.moveTo(-3, -18); c.lineTo(-3 + Math.sin(ph) * 9, 0); c.moveTo(3, -18); c.lineTo(3 - Math.sin(ph) * 9, 0); c.stroke();
+    c.fillStyle = ['#d9a17a', '#a86c4a', '#efc29b'][f.v % 3]; c.strokeStyle = '#140d22'; c.lineWidth = 2; c.beginPath(); c.arc(0, -50, 9, 0, 7); c.fill(); c.stroke();
+    c.restore();
+    if (f.t < 1.2) { c.save(); c.font = '900 12px Nunito, sans-serif'; c.textAlign = 'center'; c.fillStyle = '#ffe9a0'; c.globalAlpha = 1 - f.t / 1.2; c.fillText('Obrigado!', f.x, f.y - 70 - f.t * 20); c.restore(); }
+  }
   // monstros
   for (const en of P.ini.values()) {
     if (!visivel(en.x, en.y)) continue;
     desenharInimigo(c, en, t, P.bioma);
+    if (en.gelo > 0 || en.queima > 0) desenharEstadoInimigo(c, en, t);
     if (en.flash > 0) { c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = en.flash / 0.12 * 0.8; c.drawImage(brilho('rgba(255,255,255,.9)', 48), en.x - en.w, en.y - en.h - 10, en.w * 2, en.h + 20); c.restore(); }
   }
   // outros heróis
@@ -1080,6 +1474,7 @@ function desenhar() {
   if (P.lentoT > 0) { c.fillStyle = `rgba(150,200,255,${Math.min(0.22, P.lentoT * 0.4)})`; c.fillRect(0, 0, cv.width, cv.height); }
   desenharVinheta(c);
   desenharHud(c);
+  desenharDesenho(c);
   esp.desenharTela(c, cv.width, cv.height, (x, y) => [(x - camX) * ESC, (y - camY) * ESC]);
 }
 function fimRelDe(st) { const C = CLASSES[st.c]; const at = C && C.ataques[st.cb || 0]; return at ? at.fim / at.dur : 0.6; }
@@ -1132,6 +1527,7 @@ function desenharVinheta(c) {
   c.drawImage(vinheta, 0, 0);
 }
 function desenharFx(c, f) {
+  if (desenharFxFeitico(c, f, P.t)) return;
   const k = f.t / f.dur;
   c.save(); c.globalCompositeOperation = 'lighter';
   if (f.tipo === 'corte' || f.tipo === 'garra') {
@@ -1191,6 +1587,11 @@ function desenharFx(c, f) {
     c.beginPath(); c.ellipse(0, 0, 11 * ab, 42 * ab, 0, 0, 7); c.stroke();
     c.fillStyle = '#ffffff';
     for (let i = 0; i < 10; i++) { const a = f.t * 6 + i * 0.628; c.fillRect(Math.cos(a) * 14 * ab - 1.5, Math.sin(a) * 50 * ab - 1.5, 3, 3); }
+  } else if (f.tipo === 'explosao') {
+    const r = f.r * (0.4 + 0.8 * Math.min(1, k * 2.5));
+    c.globalAlpha = 1 - k;
+    c.drawImage(brilho('rgba(255,170,60,.95)', 64), f.x - r * 1.2, f.y - r * 1.2, r * 2.4, r * 2.4);
+    c.drawImage(brilho('rgba(255,250,220,.95)', 48), f.x - r * 0.5, f.y - r * 0.5, r, r);
   } else if (f.tipo === 'rastro') {
     c.globalAlpha = (1 - k) * 0.7; c.fillStyle = f.cor;
     c.fillRect(Math.min(f.x, f.x - f.d * 160), f.y - 60, 160, 50);
@@ -1233,8 +1634,22 @@ function desenharHud(c) {
     c.font = '800 11px Nunito, sans-serif'; c.fillText(h.habCd > 0 ? h.habCd.toFixed(1) : '[K]', hx + 26, hy + 39);
     if (h.habCd > 0) { c.strokeStyle = C.cor; c.lineWidth = 3; c.beginPath(); c.arc(hx + 26, hy + 27, 24, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - h.habCd / (C.habCd * h.mods.cd))); c.stroke(); }
   }
+  // feitiços desenhados (mago)
+  if (h.classe === 'mago') {
+    const fx0 = TOQUE ? x : x + 300, fy0 = TOQUE ? y + 84 : y + 4;
+    let i = 0;
+    for (const k of ['raio', 'gelo', 'fogo']) {
+      const cx2 = fx0 + 20 + i * 44, cy2 = fy0 + 20, cd = h.feitCd ? h.feitCd[k] : 0, F = FEIT[k];
+      c.fillStyle = 'rgba(10,6,30,.7)'; c.beginPath(); c.arc(cx2, cy2, 19, 0, 7); c.fill();
+      c.globalAlpha = cd > 0 ? 0.4 : 1; c.font = '16px sans-serif'; c.textAlign = 'center'; c.fillStyle = '#fff'; c.fillText(F.ic, cx2, cy2 + 6); c.globalAlpha = 1;
+      if (cd > 0) { c.strokeStyle = F.cor; c.lineWidth = 3; c.beginPath(); c.arc(cx2, cy2, 17, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - cd / (F.cd * h.mods.cd))); c.stroke(); }
+      else { c.strokeStyle = F.cor; c.lineWidth = 1.5; c.beginPath(); c.arc(cx2, cy2, 18, 0, 7); c.stroke(); }
+      i++;
+    }
+    if (!h.dicaFeit) { c.font = '700 11px Nunito, sans-serif'; c.textAlign = 'left'; c.fillStyle = 'rgba(232,213,255,.8)'; c.fillText(TOQUE ? 'desenhe na tela: ⚡ zigue-zague · ◯ círculo · 〰 linha' : 'desenhe com o mouse: ⚡ zigue-zague · ◯ círculo · 〰 linha', fx0, fy0 + 54); }
+  }
   // aliados
-  let ay = y + 86;
+  let ay = y + 86 + (h.classe === 'mago' && TOQUE ? (h.dicaFeit ? 46 : 64) : 0);
   for (const o of Object.values(P.outros)) {
     const st = o.st;
     c.fillStyle = 'rgba(10,6,30,.6)'; roundRect(c, x, ay, 160, 22, 8); c.fill();
@@ -1258,14 +1673,14 @@ function desenharHud(c) {
   c.textAlign = 'center'; c.font = '800 14px Cinzel, serif'; c.fillStyle = 'rgba(232,213,255,.85)';
   if (!P.nv.chefe) c.fillText(`Andar ${P.andar} · ${P.bioma.nome}`, Math.max(LW / 2, 420), 24);
   // chefe
-  const chefe = [...P.ini.values()].find(e => e.tipo === 'chefe');
+  const chefe = [...P.ini.values()].find(e => DEFS[e.tipo].chefe);
   if (chefe) {
     const w = Math.min(520, LW - 400), bx = Math.max(LW / 2 - w / 2, 300), by = 10;
     c.fillStyle = 'rgba(10,6,30,.75)'; roundRect(c, bx - 6, by - 4, w + 12, 30, 10); c.fill();
     c.fillStyle = '#3a1030'; c.fillRect(bx, by + 12, w, 9);
-    const gb = c.createLinearGradient(bx, 0, bx + w, 0); gb.addColorStop(0, '#ff4fc8'); gb.addColorStop(1, '#ffb3ec');
+    const gb = c.createLinearGradient(bx, 0, bx + w, 0); const corCh = DEFS[chefe.tipo].cor || ['#ff4fc8', '#ffb3ec']; gb.addColorStop(0, corCh[0]); gb.addColorStop(1, corCh[1]);
     c.fillStyle = gb; c.fillRect(bx, by + 12, w * clamp(chefe.hp / chefe.mhp, 0, 1), 9);
-    c.font = '800 12px Cinzel, serif'; c.fillStyle = '#ffd6f4'; c.fillText(DEFS.chefe.nome, bx + w / 2, by + 9);
+    c.font = '800 12px Cinzel, serif'; c.fillStyle = '#ffd6f4'; c.fillText(DEFS[chefe.tipo].nome + (chefe.hp < chefe.mhp * 0.5 ? ' — enfurecido!' : ''), bx + w / 2, by + 9);
   }
   // contador de combo
   const cb = P.cmb;
@@ -1348,6 +1763,7 @@ function passo(dt) {
   if (G.modo === 'sala') atualizarOutros(dt);
   if (jogando) atualizarEu(dt);
   if (P.host) simularHost(dt); else simularReplicas(dt);
+  sonsChefes();
   atualizarEfeitos(dt);
   esp.atualizar(dt, dtReal);
   if (G.tela === null || G.tela === 'jogo') atualizarBotaoHab();
@@ -1427,7 +1843,7 @@ function abrirAltar(andar) {
   const resto = [...BENCAOS, ...ecos.filter(e => !ecoSorteado.includes(e))].sort(() => r() - 0.5).slice(0, 2);
   const ops = [...ecoSorteado, ...resto].sort(() => r() - 0.5);
   const box = $('#bencaos'); box.innerHTML = '';
-  $('#altarSub').textContent = `Antes do andar ${andar}${ehChefe(andar) ? ' — o chefe espera!' : ''} · escolha uma bênção`;
+  $('#altarSub').textContent = `Antes do andar ${andar}${ehChefe(andar) ? ` — ${DEFS[chefeDo(andar).tipo].nome} espera!` : ''} · escolha uma bênção`;
   $('#altarEspera').textContent = '';
   for (const b of ops) {
     const el = document.createElement('button'); el.className = 'bencao';
@@ -1473,7 +1889,7 @@ function mostrarFim(vitoria) {
     return;
   }
   $('#fimTitulo').textContent = vitoria ? 'Vitória!' : 'Fim da jornada';
-  $('#fimTexto').textContent = vitoria ? 'O Guardião do Prisma caiu. Dá pra continuar descendo — fica mais difícil!' : (G.modo === 'solo' ? 'Você caiu na cripta…' : 'Todo o grupo caiu na cripta…');
+  $('#fimTexto').textContent = vitoria ? `${G.ultimoChefe || 'O chefão'} caiu. Dá pra continuar descendo — o próximo chefão te espera, e fica mais difícil!` : (G.modo === 'solo' ? 'Você caiu na cripta…' : 'Todo o grupo caiu na cripta…');
   $('#fimStats').innerHTML = `<span>Andar ${P ? P.andar : G.meta.andar}</span><span>👹 ${h ? h.mortos : 0} monstros</span><span>💎 ${h ? h.cristais : 0} cristais</span>`;
   const host = souHost();
   $('#bContinuar').hidden = !(vitoria && host);
