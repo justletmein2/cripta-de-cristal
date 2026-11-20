@@ -5,7 +5,7 @@ import { criarFundo, desenharFundo, desenharAtmosfera, criarBlocos, desenharEnfe
 const brilhoArte = brilho;
 import { CLASSES, ORDEM, nomeClasse, calcularPose, desenharHeroi } from './herois.js';
 import { DEFS, TIPOS, ESTADOS, criarInimigo, atualizarInimigo, caixaGolpe, danoGolpe, corpo, desenharInimigo, desenharProjetil, desenharZona, caixaZona } from './inimigos.js';
-import { moverCorpo, solido } from './fisica.js';
+import { moverCorpo, solido, temChaoFrente, paredeFrente } from './fisica.js';
 import { ctrl, consumir, temPedido, ligarControles } from './controles.js';
 import { som, iniciarSom, musica, alternarSom } from './som.js';
 import * as rede from './rede.js';
@@ -13,6 +13,7 @@ import { carregarSprites, pontaArma } from './sprites.js';
 import * as esp from './espetaculo.js';
 import * as trilho from './trilho.js';
 import { ATAQUES3, projAcerta, chaoDaArena } from './chefes.js';
+import { SERVO, desenharServo, desenharMarca, desenharMordivel } from './servos.js';
 import { ARM, perigoArmadilha, desenharArmadilha, desenharObjeto } from './objetos.js';
 import { FEIT, reconhecer, reamostrar, desenharRastro, desenharFxFeitico, desenharEstadoInimigo } from './feiticos.js';
 carregarSprites(['cavaleiro_m', 'cavaleiro_f', 'mago_f', 'mago_m', 'vampiro_f', 'vampiro_m']);
@@ -107,6 +108,7 @@ function iniciarAndar(andar, semente) {
   if (P.host) popularAndar(nv, andar, semente, nJog);
   P.arenas = (nv.arenas || []).map(a => ({ ...a, foi: false }));
   iniciarObjetos(nv);
+  P.servos = new Map();
   P.cam.x = h.x - VW / 2; P.cam.y = h.y - VISTA_H * 0.68;
   prepararArte();
   mostrar(null);
@@ -418,6 +420,7 @@ function virarHost() {
     en.hp = r.hp; en.mhp = r.mhp; en.d = r.d; en.arm = r.arm || 0; en.marm = r.marm || 0; en.armT = r.armT || 0;
     P.ini.set(id, en);
   }
+  for (const sv of P.servos?.values() || []) { const D = DEFS[sv.tipo]; Object.assign(sv, { dono: sv.dono || meuUid(), cd: 0, vx: 0, vy: 0, noChao: true, dano: Math.round(Math.max(14, D.dano * 1.3) * (P.mult.dano || 1)) }); }
   aviso('Você virou o anfitrião', 'o outro jogador saiu');
 }
 
@@ -426,17 +429,18 @@ const nE = e => ESTADOS.indexOf(e), nT = t => TIPOS.indexOf(t);
 const ATQ_CHEFE = ['espinhos', 'investida', 'rajada', 'invocar', ...ATAQUES3];
 function enviarInimigos() {
   const e = [];
-  for (const en of P.ini.values()) e.push([en.id, nT(en.tipo), Math.round(en.x), Math.round(en.y), Math.max(0, Math.round(en.hp)), en.mhp, en.d, nE(en.estado), Math.round(en.tE * 100), en.ac, DEFS[en.tipo].chefe ? ATQ_CHEFE.indexOf(en.ataque) : -1, en.elite ? 1 : 0, Math.max(0, Math.round(en.arm)), en.marm, Math.round((en.atordT || 0) * 10), Math.round((en.gelo || 0) * 10), en.queima > 0 ? 1 : 0]);
+  for (const en of P.ini.values()) e.push([en.id, nT(en.tipo), Math.round(en.x), Math.round(en.y), Math.max(0, Math.round(en.hp)), en.mhp, en.d, nE(en.estado), Math.round(en.tE * 100), en.ac, DEFS[en.tipo].chefe ? ATQ_CHEFE.indexOf(en.ataque) : -1, en.elite ? 1 : 0, Math.max(0, Math.round(en.arm)), en.marm, Math.round((en.atordT || 0) * 10), Math.round((en.gelo || 0) * 10), en.queima > 0 ? 1 : 0, en.marca > 0 ? 1 : 0]);
   const p = P.proj.map(q => [q.id, Math.round(q.x), Math.round(q.y), Math.round(q.vx), Math.round(q.vy), q.tipo, q.dano]);
   const z = P.zonas.map(q => [q.id, Math.round(q.x), Math.round(q.y), q.espera, q.dur, q.dano, Math.round((P.t - q.criado) * 1000), q.tipo || 0]);
-  rede.enviarInimigos(G.codigo, { an: P.andar, sm: P.semente, e, p: p.length ? p : 0, z: z.length ? z : 0, m: [...P.visto].slice(-40) });
+  const sv = [...P.servos.values()].map(v => [v.id, nT(v.tipo), Math.round(v.x), Math.round(v.y), v.d, nE(v.estado), Math.round(v.tE * 100), Math.round(v.vida * 10), v.ac]);
+  rede.enviarInimigos(G.codigo, { an: P.andar, sm: P.semente, e, p: p.length ? p : 0, z: z.length ? z : 0, s: sv.length ? sv : 0, m: [...P.visto].slice(-40) });
 }
 function receberInimigos(s) {
   if (!s || s.an !== P.andar || s.sm !== P.semente) return;
   P.recebeuIni = true;
   const vivos = new Set();
   for (const a of s.e || []) {
-    const [id, ti, x, y, hp, mhp, d, es, tE, ac, atq, el, arm, marm, at10, gel, qm] = a;
+    const [id, ti, x, y, hp, mhp, d, es, tE, ac, atq, el, arm, marm, at10, gel, qm, mc] = a;
     vivos.add(id);
     let r = P.ini.get(id);
     if (!r) {
@@ -447,13 +451,24 @@ function receberInimigos(s) {
       if (P.recebeuIni && P.t > 2) P.fx.push({ tipo: 'runa', x, y: y - 50, t: 0, dur: 0.6 });
     }
     r.tx = x; r.ty = y; r.hp = hp; r.mhp = mhp; r.d = d; r.ac = ac; r.ataque = ATQ_CHEFE[atq];
-    r.gelo = (gel || 0) / 10; r.queima = qm ? Math.max(r.queima || 0, 0.6) : 0;
+    r.gelo = (gel || 0) / 10; r.queima = qm ? Math.max(r.queima || 0, 0.6) : 0; r.marca = mc ? 1 : 0;
     if (r.arm > 0 && arm <= 0 && marm > 0) efeitoQuebra(r);
     r.arm = arm || 0; r.marm = marm || 0; r.atordT = (at10 || 0) / 10; if (arm <= 0 && marm > 0) r.armT = r.armT || 6;
     const novoEstado = ESTADOS[es];
     if (novoEstado !== r.estado) { r.estado = novoEstado; r.tE = tE / 100; }
   }
   for (const [id, r] of P.ini) if (!vivos.has(id)) matarInimigo(r);
+  // servos de sangue
+  const sv = new Set();
+  for (const a of s.s || []) {
+    const [id, ti, x, y, d, es, tE, v10, ac] = a;
+    sv.add(id);
+    let r = P.servos.get(id);
+    if (!r) { const D = DEFS[TIPOS[ti]]; r = { id, tipo: TIPOS[ti], x, y, tx: x, ty: y, w: D.w, h: D.h, idade: 0, mult: P.mult, flash: 0 }; P.servos.set(id, r); efeitoServo(r, true); }
+    r.tx = x; r.ty = y; r.d = d; r.vida = v10 / 10; r.ac = ac;
+    const ne = ESTADOS[es]; if (ne !== r.estado) { r.estado = ne; r.tE = tE / 100; }
+  }
+  for (const [id, r] of P.servos) if (!sv.has(id)) { efeitoServo(r, false); P.servos.delete(id); }
   // projéteis
   const pv = new Set();
   for (const q of s.p || []) {
@@ -485,7 +500,10 @@ function aplicarGolpesRemotos(golpes) {
       max = Math.max(max, k);
       for (const [id, dano, kb, forte, lanca, ef] of g) {
         const en = P.ini.get(id);
-        if (en) { ferirInimigo(en, dano, kb, !!forte, false, !!lanca); if (ef && P.ini.has(id)) aplicarEfeito(en, ef, dano); }
+        if (!en) continue;
+        if (ef >= 3) aplicarEfeito(en, ef, dano, u);
+        ferirInimigo(en, dano, kb, !!forte, false, !!lanca);
+        if (ef && ef < 3 && P.ini.has(id)) aplicarEfeito(en, ef, dano, u);
       }
     }
     P.golpeUlt[u] = max;
@@ -515,8 +533,10 @@ function ferirInimigo(en, dano, kbx, forte, meu, lanca) {
   if (!pesado && (forte || en.estado !== 'golpe')) { if (en.estado !== 'atordoado' || !(en.atordT > 0.5)) en.atordT = 0; en.estado = 'atordoado'; en.tE = 0; }
 }
 // feitiços: 1 = congelado (não anda nem ataca) · 2 = queimando (perde vida aos poucos)
-function aplicarEfeito(en, ef, dano) {
+// 3 = marca de sangue (morreu marcado, vira servo) · 4 = mordida (vira servo com certeza)
+function aplicarEfeito(en, ef, dano, dono = meuUid()) {
   const chefao = DEFS[en.tipo].chefe;
+  if (ef === 3 || ef === 4) { if (!chefao) { en.marca = 10; en.marcaDono = dono; } return; }
   if (ef === 1) {
     en.gelo = chefao ? 0.7 : 3.5;
     en.estado = 'atordoado'; en.tE = 0; en.atordT = en.gelo; en.vx = 0;
@@ -525,6 +545,7 @@ function aplicarEfeito(en, ef, dano) {
   }
 }
 function tickEfeitos(en, dt) {
+  if (en.marca > 0 && P.host) en.marca = Math.max(0, en.marca - dt);
   if (en.gelo > 0) en.gelo = Math.max(0, en.gelo - dt);
   if (en.queima > 0) {
     en.queima -= dt; en.queimaT = (en.queimaT || 0) + dt;
@@ -575,10 +596,10 @@ function golpear(en, base, kb, forte, x, y, lanca = false, deEco = false, ef = 0
   if (!deEco && forte && h.atk && (h.atk.especial || h.combo === C.ataques.length - 1 || crit)) esp.impacto(x ?? en.x, y ?? en.y - en.h / 2, 1);
   const rouba = (C.rouba || 0) + h.mods.rouba;
   if (rouba > 0 && !h.caido) h.hp = Math.min(h.mhp, h.hp + dano * rouba);
-  if (P.host) { ferirInimigo(en, dano, kx, forte, true, lanca); if (ef) aplicarEfeito(en, ef, dano); }
+  if (P.host) { if (ef >= 3) aplicarEfeito(en, ef, dano); ferirInimigo(en, dano, kx, forte, true, lanca); if (ef && ef < 3) aplicarEfeito(en, ef, dano); }
   else {
     P.golpeFila.push(ef ? [en.id, dano, Math.round(kx), forte ? 1 : 0, lanca ? 1 : 0, ef] : [en.id, dano, Math.round(kx), forte ? 1 : 0, lanca ? 1 : 0]); en.hp -= dano;
-    if (ef === 1) en.gelo = DEFS[en.tipo].chefe ? 0.7 : 3.5; else if (ef === 2) en.queima = 4;
+    if (ef === 1) en.gelo = DEFS[en.tipo].chefe ? 0.7 : 3.5; else if (ef === 2) en.queima = 4; else if (ef >= 3 && !DEFS[en.tipo].chefe) en.marca = 10;
     if (en.arm > 0) { en.arm -= dano; if (en.arm <= 0) efeitoQuebra(en); }
   }
 }
@@ -587,6 +608,7 @@ function matarInimigo(en) {
   P.visto.add(en.id);
   P.ini.delete(en.id);
   const d = DEFS[en.tipo];
+  if (P.host && en.marca > 0 && !d.chefe) levantarServo(en);
   const cx = en.x, cy = (en.ty ?? en.y) - en.h / 2;
   som.quebra();
   const ehChefao = !!d.chefe;
@@ -690,10 +712,135 @@ function efeitoHab(tipo, x, y, d, meu, cor) {
     for (let i = 0; i < 30; i++) P.parts.push({ x: x + (Math.random() - 0.5) * 200, y: y - Math.random() * 30, vx: 0, vy: -100 - Math.random() * 220, vida: 1, max: 1, cor: '#fff3b0', tam: 3 + Math.random() * 3, grav: 0 });
   } else if (tipo === 'uivo') {
     P.fx.push({ tipo: 'anel', x, y: y - 40, t: 0, dur: 0.6, cor: '#ffb04d', raio: 190 });
+  } else if (tipo === 'mordida') {
+    efeitoMordida(x, y, meu);
   } else if (tipo === 'revoada') {
     for (let i = 0; i < 14; i++) P.parts.push({ x: x + (Math.random() - 0.5) * 30, y: y - 40 + (Math.random() - 0.5) * 40, vx: d * (300 + Math.random() * 500), vy: (Math.random() - 0.5) * 200, vida: 0.5, max: 0.5, cor: '#2a0d1a', tam: 7, grav: 0, morcego: true });
   } else if (tipo === 'investida' || tipo === 'voadora') {
     P.fx.push({ tipo: 'rastro', x, y, t: 0, dur: 0.4, d, cor: tipo === 'investida' ? '#9fd3ff' : '#ffd23f' });
+  }
+}
+
+// ---------- Vampiro/Vampira: marcas, mordida e servos de sangue ----------
+function mordidinha(en) {
+  const x = en.x, y = en.y - en.h * 0.7;
+  for (let i = 0; i < 8; i++) P.parts.push({ x, y, vx: (Math.random() - 0.5) * 220, vy: -60 - Math.random() * 160, vida: 0.5, max: 0.5, cor: '#ff2a4a', tam: 3 + Math.random() * 3, grav: 1 });
+  numero(x, y - 30, 'MARCADO', '#ff4d6d', false);
+}
+// monstro que dá pra morder: tonto (armadura quebrada), congelado ou com pouca vida, colado na frente
+const mordivel = en => en.hp > 0 && !DEFS[en.tipo].chefe && ((en.marm > 0 && en.arm <= 0) || en.gelo > 0 || en.hp <= en.mhp * 0.3);
+function presaMordivel(h) {
+  let melhor = null, md = 1e9;
+  for (const en of P.ini.values()) {
+    if (!mordivel(en)) continue;
+    const dx = en.x - h.x, dy = (en.y - en.h / 2) - (h.y - h.h / 2);
+    if (Math.abs(dx) > 70 + en.w / 2 || Math.abs(dy) > 80) continue;
+    if (Math.abs(dx) > 30 && sinal(dx) !== h.d && !(ctrl.dir || ctrl.esq)) continue;
+    const dd = Math.abs(dx) + Math.abs(dy) * 0.5;
+    if (dd < md) { md = dd; melhor = en; }
+  }
+  return melhor;
+}
+function comecarMordida(h, en) {
+  h.mord = { id: en.id, t: 0, mordeu: false };
+  h.atk = null; h.d = sinal(en.x - h.x) || h.d;
+  h.invT = Math.max(h.invT, 0.9);
+  // gruda no monstro
+  h.x = en.x - h.d * (en.w / 2 + 12);
+  P.lentoT = Math.max(P.lentoT, 0.45);
+  P.mordFlash = 0.7;
+  som.golpe(true);
+  h.ak++;
+}
+function atualizarMordida(h, dt) {
+  const m = h.mord;
+  m.t += dt;
+  const en = P.ini.get(m.id);
+  if (!m.mordeu && m.t >= 0.2) {
+    m.mordeu = true;
+    if (en && en.hp > 0) {
+      const base = Math.ceil((en.hp + 6) / (0.9 * h.mods.dano));
+      h.d = sinal(en.x - h.x) || h.d;
+      golpear(en, base, 380, true, en.x, en.y - en.h * 0.75, false, false, 4);
+      const cura = Math.round(h.mhp * 0.2);
+      if (!h.caido) { h.hp = Math.min(h.mhp, h.hp + cura); numero(h.x, h.y - h.h - 24, '+' + cura, '#9fffb0', true); }
+      numero(en.x, en.y - en.h - 40, 'MORDIDA!', '#ff4d6d', true);
+      esp.ganharEspecial(12);
+      h.fxId++; h.fx = [h.fxId, 'mordida', Math.round(en.x), Math.round(en.y - en.h * 0.7), h.d];
+      efeitoMordida(en.x, en.y - en.h * 0.7, true);
+    }
+  }
+  if (m.t >= 0.55) { h.mord = null; h.vx = -h.d * 260; h.vy = -220; }
+}
+function efeitoMordida(x, y, meu) {
+  som.quebra(); som.cura();
+  P.fx.push({ tipo: 'anel', x, y, t: 0, dur: 0.5, cor: '#ff2a4a', raio: 90 });
+  for (let i = 0; i < 30; i++) { const a = Math.random() * 7, v = 100 + Math.random() * 380; P.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 120, vida: 0.8, max: 0.8, cor: i % 3 ? '#d6233f' : '#ff8a9a', tam: 3 + Math.random() * 5, grav: 1.2 }); }
+  if (meu) { P.tremor = Math.max(P.tremor, 14); P.paraT = Math.max(P.paraT, 0.1); }
+}
+// (anfitrião) o marcado morreu: levanta como servo de quem marcou
+function levantarServo(en) {
+  const dono = en.marcaDono || meuUid();
+  const meus = [...P.servos.values()].filter(v => v.dono === dono).sort((a, b) => a.vida - b.vida);
+  while (meus.length >= SERVO.max) { const v = meus.shift(); efeitoServo(v, false); P.servos.delete(v.id); }
+  const D = DEFS[en.tipo];
+  const id = ++P.nextId;
+  const sv = { id, tipo: en.tipo, x: en.x, y: en.ty ?? en.y, vx: 0, vy: 0, w: D.w, h: D.h, d: en.d || 1, estado: 'persegue', tE: 0, idade: 0, vida: SERVO.dur, dono, cd: 0.4, ac: 0, mult: P.mult, flash: 0, noChao: true,
+    dano: Math.round(Math.max(14, D.dano * 1.3) * (P.mult.dano || 1)) };
+  P.servos.set(id, sv);
+  efeitoServo(sv, true);
+}
+function efeitoServo(sv, nasce) {
+  const x = sv.x, y = sv.y - sv.h / 2;
+  if (nasce) { som.runa(); numero(x, y - sv.h / 2 - 20, 'SERVO!', '#ff4d6d', true); }
+  for (let i = 0; i < (nasce ? 24 : 18); i++) P.parts.push({ x: x + (Math.random() - 0.5) * sv.w, y: sv.y - Math.random() * sv.h, vx: (Math.random() - 0.5) * 120, vy: nasce ? -40 - Math.random() * 200 : 40 + Math.random() * 120, vida: 0.7, max: 0.7, cor: i % 2 ? '#d6233f' : '#5a0010', tam: 4 + Math.random() * 4, grav: nasce ? 0.3 : 1 });
+}
+function posDono(u) {
+  if (u === meuUid()) return P.eu.caido ? null : P.eu;
+  const o = P.outros[u];
+  return o && !o.st?.cai ? o : null;
+}
+// (anfitrião) cada servo caça o monstro mais perto; sem monstro, segue o dono
+function simularServos(dt) {
+  for (const sv of [...P.servos.values()]) {
+    sv.vida -= dt; sv.tE += dt; sv.idade += dt; sv.cd -= dt;
+    if (sv.vida <= 0) { efeitoServo(sv, false); P.servos.delete(sv.id); continue; }
+    const D = DEFS[sv.tipo], voa = !!D.voa;
+    let alvo = null, md = 900;
+    for (const en of P.ini.values()) {
+      if (!(en.hp > 0)) continue;
+      const dd = Math.abs(en.x - sv.x) + Math.abs(en.y - sv.y) * 1.5;
+      if (dd < md) { md = dd; alvo = en; }
+    }
+    const dono = posDono(sv.dono);
+    if (dono && Math.hypot(dono.x - sv.x, dono.y - sv.y) > 1300) { sv.x = dono.x - (dono.d || 1) * 60; sv.y = dono.y; sv.vx = sv.vy = 0; efeitoServo(sv, true); }
+    let tx = null, ty = null, perto = false;
+    if (alvo) {
+      tx = alvo.x - sinal(alvo.x - sv.x) * (alvo.w / 2 + sv.w / 2 + 6); ty = alvo.y;
+      perto = Math.abs(alvo.x - sv.x) < alvo.w / 2 + sv.w / 2 + 34 && Math.abs((alvo.y - alvo.h / 2) - (sv.y - sv.h / 2)) < Math.max(60, (alvo.h + sv.h) / 2);
+      sv.d = sinal(alvo.x - sv.x) || sv.d;
+    } else if (dono) { tx = dono.x - (dono.d || 1) * 70; ty = dono.y; }
+    // ataque
+    if (sv.estado === 'prepara') { sv.vx = 0; if (sv.tE > 0.18) { sv.estado = 'golpe'; sv.tE = 0; sv.ac++;
+      if (alvo && perto) { const kb = sv.d * 220; ferirInimigo(alvo, sv.dano, kb, false, false, false); numero(alvo.x, alvo.y - alvo.h - 6, sv.dano, '#ff8a9a', false); faiscas(alvo.x, alvo.y - alvo.h / 2, '#ff2a4a', 8); som.acerto(false); }
+    } }
+    else if (sv.estado === 'golpe') { sv.vx = 0; if (sv.tE > 0.22) { sv.estado = 'persegue'; sv.tE = 0; sv.cd = SERVO.cd; } }
+    else {
+      if (alvo && perto && sv.cd <= 0) { sv.estado = 'prepara'; sv.tE = 0; }
+      else if (tx !== null) {
+        const dx = tx - sv.x, vel = (D.vel || 150) * 1.3;
+        sv.vx = Math.abs(dx) < 10 ? 0 : sinal(dx) * Math.min(vel, Math.abs(dx) * 6);
+        if (voa) { const yy = (ty ?? sv.y) - (alvo ? alvo.h / 2 - sv.h / 2 : 80); sv.vy = clamp((yy - sv.y) * 4, -vel, vel); }
+        if (sv.vx) sv.d = sinal(sv.vx);
+      } else sv.vx = 0;
+    }
+    if (voa) { sv.x += sv.vx * dt; sv.y += (sv.vy || 0) * dt; }
+    else {
+      // pula pra subir degrau / atravessar buraco atrás do alvo
+      if (sv.noChao && sv.vx && (paredeFrente(sv, P.nv, sv.d) || !temChaoFrente(sv, P.nv, sv.d))) sv.vy = -720;
+      moverCorpo(sv, dt, P.nv);
+      if (sv.y > P.nv.h * T) { sv.vida = 0; }
+    }
   }
 }
 
@@ -848,12 +995,12 @@ function atualizarEu(dt) {
   const mx = (ctrl.dir ? 1 : 0) - (ctrl.esq ? 1 : 0);
 
   // rolar
-  if (h.rolarT <= 0 && h.habT <= 0 && h.rolarCd <= 0 && consumir('rolar', 160)) {
+  if (!h.mord && h.rolarT <= 0 && h.habT <= 0 && h.rolarCd <= 0 && consumir('rolar', 160)) {
     h.rolarT = ROLAR; h.rolarCd = 0.45; h.perfeitoUsado = false; esp.aoBlink(h.x, h.y); if (mx) h.d = mx; h.invT = Math.max(h.invT, 0.32); h.atk = null; som.rolar();
     efeitoBlink(h.x, h.y, CLASSES[h.classe].cor, h.classe);
   }
   // habilidade
-  if (h.rolarT <= 0 && h.habT <= 0 && h.habCd <= 0 && consumir('hab', 160)) usarHabilidade(h);
+  if (!h.mord && h.rolarT <= 0 && h.habT <= 0 && h.habCd <= 0 && consumir('hab', 160)) usarHabilidade(h);
   // poção
   if (h.pocoes > 0 && h.hp < h.mhp && consumir('pocao', 160)) {
     h.pocoes--; const c = Math.round(h.mhp * 0.45); h.hp = Math.min(h.mhp, h.hp + c);
@@ -880,10 +1027,12 @@ function atualizarEu(dt) {
   } else if (!ctrl.segura.atacar) { h.cargaT = 0; h.cargaUsada = false; }
   // ataque (com combo e "fila" de botão)
   const ats = C.ataques;
-  if (h.rolarT <= 0 && h.habT <= 0 && temPedido('atacar', 380)) {
+  if (!h.mord && h.rolarT <= 0 && h.habT <= 0 && temPedido('atacar', 380)) {
     const at = h.atk;
     const livre = !at || h.atkT >= at.fim / atkVel;
-    if (livre) {
+    const presa = livre && h.classe === 'vampiro' && !h.mord ? presaMordivel(h) : null;
+    if (presa) { consumir('atacar', 400); comecarMordida(h, presa); }
+    else if (livre) {
       consumir('atacar', 400);
       h.combo = (at && !at.especial || h.comboT > 0) ? (h.combo + 1) % ats.length : 0;
       h.atk = ats[h.combo]; h.atkT = 0; h.acertados.clear(); h.tiroFeito = false; h.corteFeito = false; h.ak++;
@@ -930,6 +1079,12 @@ function atualizarEu(dt) {
     if (h.atkT >= dur) { h.atk = null; h.comboT = 0.32; if (h.combo === ats.length - 1) h.comboT = 0; }
   }
 
+  if (h.mord) atualizarMordida(h, dt);
+  if (P.mordFlash > 0) P.mordFlash -= dt;
+  if (h.classe === 'vampiro' && !h.dicaMord && P.t > 1) {
+    const pr = [...P.ini.values()].find(en => mordivel(en) && Math.abs(en.x - h.x) < 300 && Math.abs(en.y - h.y) < 200);
+    if (pr) { h.dicaMord = true; aviso('🦷 Dá pra morder!', 'chegue perto e ataque: ele vira seu servo', 2400); }
+  }
   // pulo
   if (temPedido('pular', 150)) {
     const sobrePlataforma = h.noChao && bloco(nv, Math.floor(h.x / T), Math.floor((h.y + 2) / T)) === 2;
@@ -950,6 +1105,8 @@ function atualizarEu(dt) {
     h.rolarT -= dt;
     if (h.rolarT <= 0) efeitoBlink(h.x, h.y, CLASSES[h.classe].cor, h.classe);
     h.vx = h.d * 1000 * (0.6 + 0.4 * (h.rolarT / ROLAR)); h.grav = 0; h.vy = 0;
+  } else if (h.mord) {
+    h.vx = 0; h.vy = Math.min(h.vy, 0); h.grav = 0;
   } else if (h.habT > 0) {
     h.habT -= dt;
     const k = h.classe;
@@ -961,7 +1118,11 @@ function atualizarEu(dt) {
       const box = { x: h.x - 34, y: h.y - h.h - 6, w: 68, h: h.h + 12 };
       for (const en of P.ini.values()) {
         if (h.habAcertados.has(en.id) || !(en.hp > 0)) continue;
-        if (toca(box, corpo(en))) { h.habAcertados.add(en.id); golpear(en, k === 'cavaleiro' ? 32 : k === 'vampiro' ? 26 : 34, k === 'cavaleiro' ? 520 : 300, true); }
+        if (toca(box, corpo(en))) {
+          h.habAcertados.add(en.id);
+          if (k === 'vampiro') { golpear(en, 26, 300, true, en.x, en.y - en.h * 0.7, false, false, 3); mordidinha(en); }
+          else golpear(en, k === 'cavaleiro' ? 32 : 34, k === 'cavaleiro' ? 520 : 300, true);
+        }
       }
       if (Math.random() < 0.8) P.parts.push({ x: h.x - h.d * 10, y: h.y - 20 - Math.random() * 40, vx: -h.d * 60, vy: 0, vida: 0.3, max: 0.3, cor: k === 'vampiro' ? '#ff4d6d' : CLASSES[k].cor, tam: 4, grav: 0 });
     }
@@ -988,7 +1149,8 @@ function atualizarEu(dt) {
   }
 
   // animação
-  if (h.habT > 0) { h.anim = 'hab'; h.fase = 1 - h.habT / h.habDur; h.ataqueInfo = { fimRel: 0.3 }; }
+  if (h.mord) { h.anim = 'atacar'; h.combo = 2; h.fase = Math.min(1, h.mord.t / 0.55); h.ataqueInfo = { fimRel: 0.6 }; }
+  else if (h.habT > 0) { h.anim = 'hab'; h.fase = 1 - h.habT / h.habDur; h.ataqueInfo = { fimRel: 0.3 }; }
   else if (h.atk) { h.anim = 'atacar'; h.fase = h.atkT / (h.atk.dur / atkVel); h.ataqueInfo = { fimRel: h.atk.fim / h.atk.dur }; }
   else if (h.rolarT > 0) { h.anim = 'rolar'; h.fase = 1 - h.rolarT / ROLAR; }
   else if (h.feridoT > 0) { h.anim = 'ferido'; h.fase = 1 - h.feridoT / 0.22; }
@@ -1249,6 +1411,7 @@ function simularHost(dt) {
   for (const z of P.zonas) if (z.criado === undefined) z.criado = P.t;
   checarEmboscadas(jogs);
   checarDesafios();
+  simularServos(dt);
   for (const en of [...P.ini.values()]) {
     const perto = jogs.some(j => Math.abs(j.x - en.x) < VW * 0.9 + 300 && Math.abs(j.y - en.y) < 900);
     if (!perto && !DEFS[en.tipo].chefe) continue;
@@ -1289,6 +1452,10 @@ function simularReplicas(dt) {
     r.x = lerp(r.x, r.tx, Math.min(1, dt * 12)); r.y = lerp(r.y, r.ty, Math.min(1, dt * 12));
     r.tE = (r.tE || 0) + dt; r.flash = Math.max(0, (r.flash || 0) - dt);
     tickEfeitos(r, dt);
+  }
+  for (const r of P.servos.values()) {
+    r.x = lerp(r.x, r.tx, Math.min(1, dt * 12)); r.y = lerp(r.y, r.ty, Math.min(1, dt * 12));
+    r.tE = (r.tE || 0) + dt; r.idade += dt; r.vida = Math.max(0, r.vida - dt);
   }
   for (const q of P.proj) { q.x += q.vx * dt; q.y += q.vy * dt; }
   P.proj = P.proj.filter(q => !P.projRemovidos.has(q.id));
@@ -1379,11 +1546,15 @@ function desenhar() {
     c.restore();
     if (f.t < 1.2) { c.save(); c.font = '900 12px Nunito, sans-serif'; c.textAlign = 'center'; c.fillStyle = '#ffe9a0'; c.globalAlpha = 1 - f.t / 1.2; c.fillText('Obrigado!', f.x, f.y - 70 - f.t * 20); c.restore(); }
   }
+  // servos de sangue
+  for (const sv of P.servos.values()) if (visivel(sv.x, sv.y)) desenharServo(c, sv, t, P.bioma);
   // monstros
   for (const en of P.ini.values()) {
     if (!visivel(en.x, en.y)) continue;
     desenharInimigo(c, en, t, P.bioma);
     if (en.gelo > 0 || en.queima > 0) desenharEstadoInimigo(c, en, t);
+    if (en.marca > 0) desenharMarca(c, en, t);
+    if (P.eu.classe === 'vampiro' && !P.eu.mord && mordivel(en) && Math.abs(en.x - P.eu.x) < 300 && Math.abs(en.y - P.eu.y) < 200) desenharMordivel(c, en, t);
     if (en.flash > 0) { c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = en.flash / 0.12 * 0.8; c.drawImage(brilho('rgba(255,255,255,.9)', 48), en.x - en.w, en.y - en.h - 10, en.w * 2, en.h + 20); c.restore(); }
   }
   // outros heróis
@@ -1471,7 +1642,13 @@ function desenhar() {
   g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, P.bioma.bruma);
   c.fillStyle = g; c.fillRect(0, cv.height * 0.65, cv.width, cv.height * 0.35);
   if (vermelho > 0) { c.fillStyle = `rgba(255,30,60,${vermelho * 0.35})`; c.fillRect(0, 0, cv.width, cv.height); }
-  if (P.lentoT > 0) { c.fillStyle = `rgba(150,200,255,${Math.min(0.22, P.lentoT * 0.4)})`; c.fillRect(0, 0, cv.width, cv.height); }
+  if (P.mordFlash > 0) {
+    // vinheta vermelha da mordida
+    const k = Math.min(1, P.mordFlash / 0.35), g = c.createRadialGradient(cv.width / 2, cv.height / 2, cv.height * 0.25, cv.width / 2, cv.height / 2, cv.width * 0.7);
+    g.addColorStop(0, 'rgba(120,0,20,0)'); g.addColorStop(1, `rgba(120,0,20,${0.75 * k})`);
+    c.fillStyle = g; c.fillRect(0, 0, cv.width, cv.height);
+  }
+  if (P.lentoT > 0 && !(P.mordFlash > 0)) { c.fillStyle = `rgba(150,200,255,${Math.min(0.22, P.lentoT * 0.4)})`; c.fillRect(0, 0, cv.width, cv.height); }
   desenharVinheta(c);
   desenharHud(c);
   desenharDesenho(c);

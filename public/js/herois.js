@@ -25,7 +25,7 @@ export const CLASSES = {
   },
   vampiro: {
     nome: 'Vampiro', nomeF: 'Vampira', cor: '#ff4d6d', vida: 115, vel: 360,
-    desc: 'Lâminas de sangue de média distância que miram sozinhas e sugam vida. Habilidade: Revoada (vira morcegos e atravessa os inimigos).',
+    desc: 'Lâminas de sangue que miram sozinhas e sugam vida. Revoada: vira morcegos, atravessa e marca quem morder. Monstro tonto ou fraco pode ser MORDIDO, e marcado que morre levanta como seu servo.',
     hab: 'Revoada', habCd: 4, rouba: 0.12,
     ataques: [
       // lâminas de sangue: média distância (~260px), atravessam e miram sozinhas
