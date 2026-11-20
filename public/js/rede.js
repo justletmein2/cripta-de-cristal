@@ -37,6 +37,7 @@ async function backendFirebase() {
     remove: p => D.remove(ref(p)),
     on: (p, cb) => D.onValue(ref(p), s => cb(s.val())),
     aoSair: (p, v) => D.onDisconnect(ref(p)).update(v),
+    conectado: cb => D.onValue(ref('.info/connected'), s => cb(!!s.val())),
   };
 }
 
@@ -110,17 +111,31 @@ export async function criarSala() {
   throw new Error('Não consegui criar a sala, tente de novo');
 }
 export const lerMeta = code => B.get(SALAS + code + '/meta');
+// Presença: quando o celular perde a conexão por um instante (tela bloqueada, 4G oscilando), o Firebase
+// marca o jogador como "offline" e, sem isto, ele nunca mais voltava a "online" pros outros — o herói
+// sumia da tela dos amigos, mesmo ele continuando a jogar. Agora a gente remarca sempre que reconecta.
+let presenca = null;
 export async function entrarSala(code, publico, cb) {
   const eu = `${SALAS}${code}/players/${uid}`;
+  let saindo = false;
+  const marcar = () => { if (saindo) return; B.update(eu, { online: true }); B.aoSair(eu, { online: false }); };
   await B.update(eu, { ...publico, online: true, entrou: agora() });
   B.aoSair(eu, { online: false });
+  presenca = marcar;
   const st = { meta: null, players: {} };
   const offs = [
     B.on(SALAS + code + '/meta', v => { st.meta = v; cb(st); }),
-    B.on(SALAS + code + '/players', v => { st.players = v || {}; cb(st); }),
+    B.on(SALAS + code + '/players', v => {
+      st.players = v || {};
+      if (st.players[uid] && st.players[uid].online === false) marcar();   // alguém (o servidor) me marcou offline: volto
+      cb(st);
+    }),
+    B.conectado ? B.conectado(ok => { if (ok) marcar(); }) : null,
   ];
-  return () => { offs.forEach(f => f && f()); B.update(eu, { online: false }); };
+  return () => { saindo = true; presenca = null; offs.forEach(f => typeof f === 'function' && f()); B.update(eu, { online: false }); };
 }
+// botão "Ressincronizar": remarca presença (e quem chama reabre a escuta da partida)
+export function remarcarPresenca() { if (presenca) presenca(); }
 export const atualizarMeta = (code, d) => B.update(SALAS + code + '/meta', d);
 export const atualizarEu = (code, d) => B.update(`${SALAS}${code}/players/${uid}`, d);
 export async function limparPartida(code) {

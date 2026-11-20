@@ -84,6 +84,7 @@ export function iniciar(api, cfg) {
   if (new URLSearchParams(location.search).has('debug')) window.__tr = { R: () => R, fase: f => { montarFase(f); ev('fase', f); }, alvos: () => alvosNaTela().map(a => ({ k: a.k, id: a.o.id, est: a.o.estado, papel: a.o.papel, x: a.ret ? a.ret.x + a.ret.w / 2 : a.x, y: a.ret ? a.ret.y + a.ret.h * 0.45 : a.y, ret: a.ret })) };
   mostrarBanner();
 }
+export function ressincronizar() { if (!R) return; R.envT = 0; R.envEstT = 0; R.ultimaFoto = R.t; }
 export function parar() { R = null; musica(false); }
 export function resumo() {
   if (!R) return null;

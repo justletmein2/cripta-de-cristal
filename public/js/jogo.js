@@ -831,8 +831,10 @@ function atualizarEfeitos(dt) {
 function atualizarOutros(dt) {
   const est = G.rede.estado || {};
   const online = new Set(jogadoresOnline());
+  // conta como presente quem está "online" OU mandou posição nos últimos segundos (presença pode falhar)
+  const presente = (u, st) => online.has(u) || (st && st.t && rede.agora() - st.t < 6000);
   for (const [u, st] of Object.entries(est)) {
-    if (u === meuUid() || !st || st.and !== P.andar || !online.has(u)) { if (P.outros[u] && (!st || !online.has(u))) delete P.outros[u]; continue; }
+    if (u === meuUid() || !st || st.and !== P.andar || !presente(u, st)) { if (P.outros[u] && (!st || !presente(u, st))) delete P.outros[u]; continue; }
     let o = P.outros[u];
     if (!o) o = P.outros[u] = { x: st.x, y: st.y, passo: 0, ak: st.ak, st, fxId: st.fx ? st.fx[0] : 0 };
     o.st = st;
@@ -1492,6 +1494,7 @@ function pausar() {
   if ((!P && !trilho.ativo()) || G.tela === 'telaAltar' || G.tela === 'telaFim') return;
   G.pausado = true;
   $('#pausaAviso').textContent = G.modo === 'sala' ? 'Com amigos o jogo continua rolando!' : '';
+  $('#bResync').hidden = G.modo !== 'sala';
   mostrar('telaPausa');
 }
 $('#bPausa').onclick = pausar;
@@ -1502,6 +1505,16 @@ $('#bFlashes').textContent = esp.config.flashes ? '⚡ Flashes de impacto: ligad
 $('#bFlashes').onclick = () => { const on = esp.alternarFlashes(); $('#bFlashes').textContent = on ? '⚡ Flashes de impacto: ligados' : '⚡ Flashes de impacto: desligados'; };
 $('#bSom').onclick = () => { const on = alternarSom(); $('#bSom').textContent = on ? '🔊 Som ligado' : '🔇 Som desligado'; };
 $('#bDesistir').onclick = () => irMenu();
+// multiplayer: refaz a conexão com a sala sem sair da partida
+$('#bResync').onclick = () => {
+  if (G.modo !== 'sala') return;
+  rede.remarcarPresenca();
+  if (G.sairPartida) { G.sairPartida(); G.sairPartida = null; }
+  G.sairPartida = rede.ouvirPartida(G.codigo, aoRede);
+  if (P) { P.outros = {}; P.envT = 0; P.envIniT = 0; }
+  trilho.ressincronizar?.();
+  aviso('Conexão ressincronizada', 'Se alguém ainda não aparecer, peça pra ele apertar o mesmo botão.', 2600);
+};
 
 // ---------- menu e sala ----------
 function irMenu() {
