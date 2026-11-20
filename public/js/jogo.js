@@ -433,7 +433,8 @@ function enviarInimigos() {
   const p = P.proj.map(q => [q.id, Math.round(q.x), Math.round(q.y), Math.round(q.vx), Math.round(q.vy), q.tipo, q.dano]);
   const z = P.zonas.map(q => [q.id, Math.round(q.x), Math.round(q.y), q.espera, q.dur, q.dano, Math.round((P.t - q.criado) * 1000), q.tipo || 0]);
   const sv = [...P.servos.values()].map(v => [v.id, nT(v.tipo), Math.round(v.x), Math.round(v.y), v.d, nE(v.estado), Math.round(v.tE * 100), Math.round(v.vida * 10), v.ac]);
-  rede.enviarInimigos(G.codigo, { an: P.andar, sm: P.semente, e, p: p.length ? p : 0, z: z.length ? z : 0, s: sv.length ? sv : 0, m: [...P.visto].slice(-40) });
+  const qs = (P.projS || []).map(q => [q.id, Math.round(q.x), Math.round(q.y), Math.round(q.vx), Math.round(q.vy), q.tipo]);
+  rede.enviarInimigos(G.codigo, { an: P.andar, sm: P.semente, e, p: p.length ? p : 0, z: z.length ? z : 0, s: sv.length ? sv : 0, q: qs.length ? qs : 0, m: [...P.visto].slice(-40) });
 }
 function receberInimigos(s) {
   if (!s || s.an !== P.andar || s.sm !== P.semente) return;
@@ -469,6 +470,13 @@ function receberInimigos(s) {
     const ne = ESTADOS[es]; if (ne !== r.estado) { r.estado = ne; r.tE = tE / 100; }
   }
   for (const [id, r] of P.servos) if (!sv.has(id)) { efeitoServo(r, false); P.servos.delete(id); }
+  const qv = new Map((s.q || []).map(a => [a[0], a]));
+  P.projS = (P.projS || []).filter(q => qv.has(q.id));
+  for (const [id, x, y, vx, vy, tipo] of qv.values()) {
+    const ex = P.projS.find(o => o.id === id);
+    if (ex) { ex.x = lerp(ex.x, x, 0.5); ex.y = lerp(ex.y, y, 0.5); ex.vx = vx; ex.vy = vy; }
+    else P.projS.push({ id, x, y, vx, vy, tipo, vida: 4 });
+  }
   // projéteis
   const pv = new Set();
   for (const q of s.p || []) {
@@ -785,8 +793,9 @@ function levantarServo(en) {
   while (meus.length >= SERVO.max) { const v = meus.shift(); efeitoServo(v, false); P.servos.delete(v.id); }
   const D = DEFS[en.tipo];
   const id = ++P.nextId;
-  const sv = { id, tipo: en.tipo, x: en.x, y: en.ty ?? en.y, vx: 0, vy: 0, w: D.w, h: D.h, d: en.d || 1, estado: 'persegue', tE: 0, idade: 0, vida: SERVO.dur, dono, cd: 0.4, ac: 0, mult: P.mult, flash: 0, noChao: true,
-    dano: Math.round(Math.max(14, D.dano * 1.3) * (P.mult.dano || 1)) };
+  const sv = criarInimigo({ id, tipo: en.tipo, x: en.x, y: en.ty ?? en.y }, P.mult, false);
+  Object.assign(sv, { d: en.d || 1, estado: 'persegue', tE: 0, idade: 0, vida: SERVO.dur, dono, arm: 0, marm: 0, noChao: !D.voa, casaY: (en.ty ?? en.y) - 60,
+    hitVisto: new Map(), forca: 1.6 });
   P.servos.set(id, sv);
   efeitoServo(sv, true);
 }
@@ -800,48 +809,68 @@ function posDono(u) {
   const o = P.outros[u];
   return o && !o.st?.cai ? o : null;
 }
-// (anfitrião) cada servo caça o monstro mais perto; sem monstro, segue o dono
+// (anfitrião) cada servo usa a própria inteligência de monstro, só que os "heróis" dele são os monstros.
+// Golpes, tiros e teleportes saem iguais, mas acertam os monstros. Sem monstro por perto, segue o dono.
 function simularServos(dt) {
+  if (!P.projS) P.projS = [];
+  const alvos = [...P.ini.values()].filter(e => e.hp > 0).map(e => ({ x: e.x, y: e.y, vivo: true, en: e }));
+  const mundoS = {
+    nv: P.nv, jogs: alvos, proj: P.projS, zonas: [], novoId: () => ++P.nextId,
+    invocar: () => {}, fx: (tipo, x, y) => { if (tipo === 'piscar') for (let i = 0; i < 10; i++) { const a = Math.random() * 7; P.parts.push({ x, y: y + (Math.random() - 0.5) * 50, vx: Math.cos(a) * 80, vy: Math.sin(a) * 80 - 30, vida: 0.5, max: 0.5, cor: 'rgba(255,40,70,.5)', tam: 8, grav: 0 }); } },
+  };
   for (const sv of [...P.servos.values()]) {
-    sv.vida -= dt; sv.tE += dt; sv.idade += dt; sv.cd -= dt;
+    sv.vida -= dt; sv.idade += dt;
     if (sv.vida <= 0) { efeitoServo(sv, false); P.servos.delete(sv.id); continue; }
     const D = DEFS[sv.tipo], voa = !!D.voa;
-    let alvo = null, md = 900;
-    for (const en of P.ini.values()) {
-      if (!(en.hp > 0)) continue;
-      const dd = Math.abs(en.x - sv.x) + Math.abs(en.y - sv.y) * 1.5;
-      if (dd < md) { md = dd; alvo = en; }
-    }
     const dono = posDono(sv.dono);
-    if (dono && Math.hypot(dono.x - sv.x, dono.y - sv.y) > 1300) { sv.x = dono.x - (dono.d || 1) * 60; sv.y = dono.y; sv.vx = sv.vy = 0; efeitoServo(sv, true); }
-    let tx = null, ty = null, perto = false;
-    if (alvo) {
-      tx = alvo.x - sinal(alvo.x - sv.x) * (alvo.w / 2 + sv.w / 2 + 6); ty = alvo.y;
-      perto = Math.abs(alvo.x - sv.x) < alvo.w / 2 + sv.w / 2 + 34 && Math.abs((alvo.y - alvo.h / 2) - (sv.y - sv.h / 2)) < Math.max(60, (alvo.h + sv.h) / 2);
-      sv.d = sinal(alvo.x - sv.x) || sv.d;
-    } else if (dono) { tx = dono.x - (dono.d || 1) * 70; ty = dono.y; }
-    // ataque
-    if (sv.estado === 'prepara') { sv.vx = 0; if (sv.tE > 0.18) { sv.estado = 'golpe'; sv.tE = 0; sv.ac++;
-      if (alvo && perto) { const kb = sv.d * 220; ferirInimigo(alvo, sv.dano, kb, false, false, false); numero(alvo.x, alvo.y - alvo.h - 6, sv.dano, '#ff8a9a', false); faiscas(alvo.x, alvo.y - alvo.h / 2, '#ff2a4a', 8); som.acerto(false); }
-    } }
-    else if (sv.estado === 'golpe') { sv.vx = 0; if (sv.tE > 0.22) { sv.estado = 'persegue'; sv.tE = 0; sv.cd = SERVO.cd; } }
-    else {
-      if (alvo && perto && sv.cd <= 0) { sv.estado = 'prepara'; sv.tE = 0; }
-      else if (tx !== null) {
-        const dx = tx - sv.x, vel = (D.vel || 150) * 1.3;
-        sv.vx = Math.abs(dx) < 10 ? 0 : sinal(dx) * Math.min(vel, Math.abs(dx) * 6);
-        if (voa) { const yy = (ty ?? sv.y) - (alvo ? alvo.h / 2 - sv.h / 2 : 80); sv.vy = clamp((yy - sv.y) * 4, -vel, vel); }
-        if (sv.vx) sv.d = sinal(sv.vx);
-      } else sv.vx = 0;
+    if (dono && Math.hypot(dono.x - sv.x, dono.y - sv.y) > 1300) { sv.x = dono.x - (dono.d || 1) * 60; sv.y = dono.y - (voa ? 80 : 0); sv.vx = sv.vy = 0; efeitoServo(sv, true); }
+    // quem anda no chão prefere monstro que dá pra alcançar (não fica abanando morcego no alto)
+    const atira = sv.tipo === 'conjurador' || sv.tipo === 'automato';
+    const alcancaveis = voa || atira ? alvos : alvos.filter(a => Math.abs(a.y - sv.y) < 140 && Math.abs(a.x - sv.x) < 900);
+    mundoS.jogs = alcancaveis.length ? alcancaveis : alvos;
+    let md = 1e9;
+    for (const a of mundoS.jogs) md = Math.min(md, Math.hypot(a.x - sv.x, a.y - sv.y));
+    const ocupado = sv.estado === 'prepara' || sv.estado === 'golpe' || sv.estado === 'recupera' || sv.estado === 'atordoado';
+    if (md < 800 || ocupado) {
+      atualizarInimigo(sv, dt, mundoS);
+      if (sv.estado === 'ronda') sv.estado = 'persegue';
+    } else {
+      // sem briga: anda atrás do dono
+      sv.tE += dt; sv.estado = 'persegue';
+      const tx = dono ? dono.x - (dono.d || 1) * 70 : sv.x, dx = tx - sv.x, vel = (D.vel || 150) * 1.3;
+      sv.vx = Math.abs(dx) < 12 ? 0 : sinal(dx) * Math.min(vel, Math.abs(dx) * 6);
+      if (sv.vx) sv.d = sinal(sv.vx);
+      if (voa) { const yy = (dono ? dono.y : sv.y) - 90; sv.x += sv.vx * dt; sv.y += clamp((yy - sv.y) * 4, -vel, vel) * dt; }
+      else {
+        if (sv.noChao && sv.vx && (paredeFrente(sv, P.nv, sv.d) || !temChaoFrente(sv, P.nv, sv.d))) sv.vy = -720;
+        moverCorpo(sv, dt, P.nv);
+      }
     }
-    if (voa) { sv.x += sv.vx * dt; sv.y += (sv.vy || 0) * dt; }
-    else {
-      // pula pra subir degrau / atravessar buraco atrás do alvo
-      if (sv.noChao && sv.vx && (paredeFrente(sv, P.nv, sv.d) || !temChaoFrente(sv, P.nv, sv.d))) sv.vy = -720;
-      moverCorpo(sv, dt, P.nv);
-      if (sv.y > P.nv.h * T) { sv.vida = 0; }
+    if (!voa && sv.y > P.nv.h * T) { sv.vida = 0; continue; }
+    // golpe corpo a corpo: acerta os monstros (uma vez por golpe)
+    const cx = caixaGolpe(sv);
+    if (cx) for (const a of alvos) {
+      const e = a.en;
+      if (!(e.hp > 0) || sv.hitVisto.get(e.id) === sv.ac || !toca(cx, corpo(e))) continue;
+      sv.hitVisto.set(e.id, sv.ac);
+      const dano = Math.round(danoGolpe(sv) * sv.forca);
+      ferirInimigo(e, dano, sinal(e.x - sv.x) * 260, true, false, false);
+      numero(e.x, e.y - e.h - 6, dano, '#ff8a9a', false); faiscas(e.x, e.y - e.h / 2, '#ff2a4a', 10); som.acerto(true);
     }
   }
+  // tiros dos servos
+  for (const q of P.projS) {
+    q.x += q.vx * dt; q.y += q.vy * dt; q.vida -= dt;
+    if (solido(P.nv, q.x, q.y)) { q.vida = 0; continue; }
+    for (const e of P.ini.values()) {
+      if (!(e.hp > 0) || !projAcerta(q, e.x, e.y, e.h)) continue;
+      const dano = Math.round(q.dano * 1.6);
+      ferirInimigo(e, dano, sinal(q.vx) * 200, false, false, false);
+      numero(e.x, e.y - e.h - 6, dano, '#ff8a9a', false); faiscas(q.x, q.y, '#ff2a4a', 8);
+      q.vida = 0; break;
+    }
+  }
+  P.projS = P.projS.filter(q => q.vida > 0);
 }
 
 // ---------- feitiços desenhados (Mago / Maga) ----------
@@ -1453,6 +1482,7 @@ function simularReplicas(dt) {
     r.tE = (r.tE || 0) + dt; r.flash = Math.max(0, (r.flash || 0) - dt);
     tickEfeitos(r, dt);
   }
+  for (const q of P.projS || []) { q.x += q.vx * dt; q.y += q.vy * dt; }
   for (const r of P.servos.values()) {
     r.x = lerp(r.x, r.tx, Math.min(1, dt * 12)); r.y = lerp(r.y, r.ty, Math.min(1, dt * 12));
     r.tE = (r.tE || 0) + dt; r.idade += dt; r.vida = Math.max(0, r.vida - dt);
@@ -1615,6 +1645,10 @@ function desenhar() {
   }
   // projéteis inimigos
   for (const q of P.proj) if (visivel(q.x, q.y)) desenharProjetil(c, q, P.bioma, t);
+  for (const q of P.projS || []) if (visivel(q.x, q.y)) {
+    c.save(); c.globalCompositeOperation = 'lighter'; c.drawImage(brilho('rgba(255,30,60,.85)', 32), q.x - 26, q.y - 26, 52, 52); c.restore();
+    desenharProjetil(c, q, P.bioma, t);
+  }
   // efeitos
   for (const f of P.fx) desenharFx(c, f);
   c.save(); c.globalCompositeOperation = 'lighter';
@@ -2280,4 +2314,4 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && P &
 redimensionar();
 requestAnimationFrame(quadro);
 if (params.has('auto')) { G.classe = params.get('classe') || G.classe; G.sexo = params.get('sexo') || G.sexo; comecarSolo(); }
-if (params.has('debug')) window.__cc = { G, get P() { return P; }, ctrl, mudarMeta };
+if (params.has('debug')) window.__cc = { G, get P() { return P; }, ctrl, mudarMeta, levantarServo, criarInimigo };
