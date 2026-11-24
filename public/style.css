@@ -132,3 +132,16 @@ body.trilho #toque { display: none !important; }
 body.touch .bLoja small { display: none; }
 .bLoja[hidden] { display: none; }
 .bencao .preco { color: #ffe28a; font-weight: 900; font-size: 14px; }
+
+/* título de cristal: um brilho atravessa as letras, faíscas piscam e tudo flutua devagar */
+.titulo-cristal { position: relative; display: inline-block; animation: flutuaTitulo 4s ease-in-out infinite; }
+.titulo-cristal .titulo, .titulo-cristal .titulo span { font-weight: 900;
+  background: linear-gradient(100deg, #b9a4ff 0%, #e9e2ff 30%, #ffffff 40%, #b9a4ff 52%, #7f63ff 100%); background-size: 250% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none;
+  animation: brilhoCristal 3s ease-in-out infinite; }
+.titulo-cristal .titulo { filter: drop-shadow(0 0 10px rgba(180,140,255,.7)) drop-shadow(0 3px 0 #2b1466); }
+.titulo-cristal .faisca { position: absolute; width: 16px; height: 16px; animation: faiscaTitulo 2.4s ease-in-out infinite; pointer-events: none; }
+@keyframes brilhoCristal { 0% { background-position: 120% 0; } 60%, 100% { background-position: -40% 0; } }
+@keyframes flutuaTitulo { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes faiscaTitulo { 0%, 100% { transform: scale(0) rotate(0); opacity: 0; } 50% { transform: scale(1) rotate(90deg); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .titulo-cristal, .titulo-cristal .titulo, .titulo-cristal .titulo span, .titulo-cristal .faisca { animation: none; } }
